@@ -24,6 +24,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/stores/authStore'
 import { getInitials } from '@/lib/utils'
+import logo from '@/components/ui/logo.png'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -66,7 +67,7 @@ export function AppLayout() {
         <div className="flex h-full flex-col">
           {/* Logo */}
           <div className="flex h-16 items-center justify-between px-4 border-b">
-            <span className="text-xl font-bold text-primary">Bethel Closer</span>
+            <img src={logo} alt="Bethel Closer" className="h-10 w-auto" />
             <Button
               variant="ghost"
               size="icon"
