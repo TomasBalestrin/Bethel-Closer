@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/toaster'
@@ -22,9 +22,13 @@ const queryClient = new QueryClient()
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading, initialize } = useAuthStore()
+  const initialized = useRef(false)
 
   useEffect(() => {
-    initialize()
+    if (!initialized.current) {
+      initialized.current = true
+      initialize()
+    }
   }, [initialize])
 
   if (isLoading) {
