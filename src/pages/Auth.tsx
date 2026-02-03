@@ -19,30 +19,35 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>
 
-// Frases motivacionais que podem ser exibidas
-const quotes = [
-  {
-    text: "Não nos pergunte se fomos capazes, nos dê a missão.",
-    category: "Valor do dia"
-  },
-  {
-    text: "Deus é poderoso para fazer infinitamente mais do que tudo o que pedimos ou pensamos.",
-    verse: "Efésios 3:20",
-    category: "Versículo do Dia"
-  },
-  {
-    text: "O sucesso é a soma de pequenos esforços repetidos dia após dia.",
-    category: "Motivação"
-  }
+// Valores da empresa - exibidos como "Valor do dia"
+const companyValues = [
+  "Você veio pra ser mais.",
+  "Nosso propósito de vida é realizado com o trabalho.",
+  "Não nos pergunte se fomos capazes, nos dê a missão.",
+  "Nossa liderança inspira confiança e ação.",
+  "Superamos expectativas e alcançamos resultados acima da média.",
+  "Sempre gratos, porém insatisfeitos!",
+  "Assumimos a responsabilidade e agimos rapidamente para resolver qualquer desafio.",
+  "Nosso ambiente é de frequência elevada, inspirando alta performance e crescimento contínuo."
 ]
+
+// Pegar o valor do dia baseado no dia do ano
+const getDailyValue = () => {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), 0, 0)
+  const diff = now.getTime() - start.getTime()
+  const oneDay = 1000 * 60 * 60 * 24
+  const dayOfYear = Math.floor(diff / oneDay)
+  return companyValues[dayOfYear % companyValues.length]
+}
 
 export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false)
   const { signIn } = useAuthStore()
   const navigate = useNavigate()
 
-  // Pegar uma frase aleatória
-  const randomQuote = quotes[Math.floor(Math.random() * quotes.length)]
+  // Pegar o valor do dia
+  const dailyValue = getDailyValue()
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -96,14 +101,11 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* Quote Card */}
+        {/* Valor do Dia Card */}
         <div className="relative z-10">
           <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-            <p className="text-sm text-blue-400 mb-2">{randomQuote.category}</p>
-            <p className="text-white italic text-lg">"{randomQuote.text}"</p>
-            {randomQuote.verse && (
-              <p className="text-gray-400 mt-2">— {randomQuote.verse}</p>
-            )}
+            <p className="text-sm text-blue-400 mb-2">Valor do dia</p>
+            <p className="text-white italic text-lg">"{dailyValue}"</p>
           </div>
         </div>
       </div>
