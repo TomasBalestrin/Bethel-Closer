@@ -62,7 +62,7 @@ import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency, formatPhoneNumber, getInitials } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Client, ClientStatus, ClientSource, TicketType } from '@/types'
+import type { Client, ClientStatus, ClientSource, TicketType, Tag as TagType } from '@/types'
 
 const clientSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -196,18 +196,49 @@ export default function ClientsPage() {
     }
   })
 
-  // Tags query - will be used in future for tag filtering
-  // const { data: tags = [] } = useQuery({
-  //   queryKey: ['tags'],
-  //   queryFn: async () => {
-  //     const { data, error } = await supabase
-  //       .from('tags')
-  //       .select('*')
-  //       .order('name')
-  //     if (error) throw error
-  //     return data as TagType[]
-  //   }
-  // })
+  // Fetch tags
+  const { data: tags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('*')
+        .order('name')
+      if (error) return [] as TagType[]
+      return data as TagType[]
+    }
+  })
+
+  // Fetch client-tag associations
+  const { data: clientTags = [] } = useQuery({
+    queryKey: ['client-tags'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('client_tags')
+        .select('client_id, tag_id')
+      if (error) return []
+      return data as { client_id: string; tag_id: string }[]
+    }
+  })
+
+  // Toggle tag on a client
+  const toggleClientTag = async (clientId: string, tagId: string) => {
+    const existing = clientTags.find(ct => ct.client_id === clientId && ct.tag_id === tagId)
+
+    if (existing) {
+      await supabase.from('client_tags').delete()
+        .eq('client_id', clientId).eq('tag_id', tagId)
+    } else {
+      await supabase.from('client_tags').insert({ client_id: clientId, tag_id: tagId })
+    }
+    queryClient.invalidateQueries({ queryKey: ['client-tags'] })
+  }
+
+  // Helper to get tags for a specific client
+  const getClientTags = (clientId: string) => {
+    const tagIds = clientTags.filter(ct => ct.client_id === clientId).map(ct => ct.tag_id)
+    return tags.filter(t => tagIds.includes(t.id))
+  }
 
   const createMutation = useMutation({
     mutationFn: async (data: ClientFormData) => {
@@ -414,6 +445,29 @@ export default function ClientsPage() {
                         <Pencil className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      {tags.length > 0 && (
+                        <>
+                          <DropdownMenuSeparator />
+                          {tags.map(tag => {
+                            const hasTag = clientTags.some(ct => ct.client_id === client.id && ct.tag_id === tag.id)
+                            return (
+                              <DropdownMenuItem
+                                key={tag.id}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  toggleClientTag(client.id, tag.id)
+                                }}
+                              >
+                                <div
+                                  className="h-3 w-3 rounded-full mr-2 border"
+                                  style={{ backgroundColor: hasTag ? tag.color : 'transparent', borderColor: tag.color }}
+                                />
+                                {tag.name}
+                              </DropdownMenuItem>
+                            )
+                          })}
+                        </>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive"
@@ -439,6 +493,20 @@ export default function ClientsPage() {
                   <div className="flex items-center gap-2 text-sm">
                     <Tag className="h-4 w-4 text-primary" />
                     <span className="font-medium">{ticketTypeLabels[client.ticket_type]}</span>
+                  </div>
+                )}
+                {/* Tags */}
+                {getClientTags(client.id).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {getClientTags(client.id).map(tag => (
+                      <span
+                        key={tag.id}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+                        style={{ borderColor: tag.color, color: tag.color, backgroundColor: `${tag.color}15` }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
                   </div>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t">

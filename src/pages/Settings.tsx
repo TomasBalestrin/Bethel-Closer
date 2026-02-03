@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, User, Bell, Shield, Palette } from 'lucide-react'
+import { Loader2, User, Bell, Shield, Palette, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { getInitials } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -23,9 +34,52 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>
 
+const passwordSchema = z.object({
+  currentPassword: z.string().min(6, 'Mínimo 6 caracteres'),
+  newPassword: z.string().min(6, 'Mínimo 6 caracteres'),
+  confirmPassword: z.string().min(6, 'Mínimo 6 caracteres')
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: 'As senhas não conferem',
+  path: ['confirmPassword']
+})
+
+type PasswordFormData = z.infer<typeof passwordSchema>
+
+// Notification preferences stored in localStorage
+interface NotificationPrefs {
+  emailNotifications: boolean
+  callReminders: boolean
+  dailySummary: boolean
+  pushNotifications: boolean
+}
+
+const defaultPrefs: NotificationPrefs = {
+  emailNotifications: true,
+  callReminders: true,
+  dailySummary: false,
+  pushNotifications: true
+}
+
+function getStoredPrefs(): NotificationPrefs {
+  try {
+    const stored = localStorage.getItem('notification-prefs')
+    return stored ? { ...defaultPrefs, ...JSON.parse(stored) } : defaultPrefs
+  } catch {
+    return defaultPrefs
+  }
+}
+
+function getStoredTheme(): string {
+  return localStorage.getItem('app-theme') || 'system'
+}
+
 export default function SettingsPage() {
-  const { user, profile, updateProfile } = useAuthStore()
+  const { user, profile, updateProfile, signOut } = useAuthStore()
   const [isLoading, setIsLoading] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>(getStoredPrefs)
+  const [theme, setTheme] = useState(getStoredTheme)
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -36,6 +90,41 @@ export default function SettingsPage() {
     }
   })
 
+  const passwordForm = useForm<PasswordFormData>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+  })
+
+  // Persist notification preferences
+  const updateNotifPref = (key: keyof NotificationPrefs, value: boolean) => {
+    const updated = { ...notifPrefs, [key]: value }
+    setNotifPrefs(updated)
+    localStorage.setItem('notification-prefs', JSON.stringify(updated))
+    toast.success('Preferência atualizada')
+  }
+
+  // Apply theme
+  useEffect(() => {
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else if (theme === 'light') {
+      root.classList.remove('dark')
+    } else {
+      // System
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        root.classList.add('dark')
+      } else {
+        root.classList.remove('dark')
+      }
+    }
+    localStorage.setItem('app-theme', theme)
+  }, [theme])
+
   const handleUpdateProfile = async (data: ProfileFormData) => {
     setIsLoading(true)
     try {
@@ -45,6 +134,80 @@ export default function SettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Erro ao atualizar perfil')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleChangePassword = async (data: PasswordFormData) => {
+    setIsChangingPassword(true)
+    try {
+      // First verify the current password by signing in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: profile?.email || '',
+        password: data.currentPassword
+      })
+
+      if (signInError) {
+        toast.error('Senha atual incorreta')
+        return
+      }
+
+      // Update password
+      const { error } = await supabase.auth.updateUser({
+        password: data.newPassword
+      })
+
+      if (error) throw error
+
+      toast.success('Senha alterada com sucesso!')
+      passwordForm.reset()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao alterar senha')
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. Máximo 2MB.')
+      return
+    }
+
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${user?.id}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true })
+
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      await updateProfile({ avatar_url: urlData.publicUrl })
+      toast.success('Foto atualizada com sucesso!')
+    } catch (error) {
+      toast.error('Erro ao fazer upload. O bucket de storage pode não estar configurado.')
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    try {
+      // Delete profile
+      if (user?.id) {
+        await supabase.from('profiles').delete().eq('user_id', user.id)
+      }
+      await signOut()
+      toast.success('Conta excluída com sucesso')
+    } catch (error) {
+      toast.error('Erro ao excluir conta')
     }
   }
 
@@ -96,8 +259,16 @@ export default function SettingsPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <Button variant="outline" size="sm">
-                    Alterar foto
+                  <Button variant="outline" size="sm" asChild>
+                    <label className="cursor-pointer">
+                      Alterar foto
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/gif"
+                        className="hidden"
+                        onChange={handleAvatarUpload}
+                      />
+                    </label>
                   </Button>
                   <p className="text-xs text-muted-foreground mt-1">
                     JPG, PNG ou GIF. Máximo 2MB.
@@ -156,7 +327,10 @@ export default function SettingsPage() {
                     Receba atualizações importantes por email
                   </p>
                 </div>
-                <Switch defaultChecked />
+                <Switch
+                  checked={notifPrefs.emailNotifications}
+                  onCheckedChange={(v) => updateNotifPref('emailNotifications', v)}
+                />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -166,7 +340,10 @@ export default function SettingsPage() {
                     Receba lembretes antes das ligações agendadas
                   </p>
                 </div>
-                <Switch defaultChecked />
+                <Switch
+                  checked={notifPrefs.callReminders}
+                  onCheckedChange={(v) => updateNotifPref('callReminders', v)}
+                />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -176,7 +353,10 @@ export default function SettingsPage() {
                     Receba um resumo diário das suas atividades
                   </p>
                 </div>
-                <Switch />
+                <Switch
+                  checked={notifPrefs.dailySummary}
+                  onCheckedChange={(v) => updateNotifPref('dailySummary', v)}
+                />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -186,7 +366,10 @@ export default function SettingsPage() {
                     Receba notificações em tempo real no navegador
                   </p>
                 </div>
-                <Switch defaultChecked />
+                <Switch
+                  checked={notifPrefs.pushNotifications}
+                  onCheckedChange={(v) => updateNotifPref('pushNotifications', v)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -204,29 +387,34 @@ export default function SettingsPage() {
               <div>
                 <Label className="mb-3 block">Tema</Label>
                 <div className="grid grid-cols-3 gap-4">
-                  <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                    <div className="h-8 w-8 rounded-full bg-background border" />
+                  <Button
+                    variant="outline"
+                    className={`h-auto py-4 flex-col gap-2 ${theme === 'light' ? 'border-primary ring-2 ring-primary/20' : ''}`}
+                    onClick={() => setTheme('light')}
+                  >
+                    <div className="h-8 w-8 rounded-full bg-white border" />
                     <span className="text-xs">Claro</span>
+                    {theme === 'light' && <Check className="h-3 w-3 text-primary" />}
                   </Button>
-                  <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    className={`h-auto py-4 flex-col gap-2 ${theme === 'dark' ? 'border-primary ring-2 ring-primary/20' : ''}`}
+                    onClick={() => setTheme('dark')}
+                  >
                     <div className="h-8 w-8 rounded-full bg-zinc-900" />
                     <span className="text-xs">Escuro</span>
+                    {theme === 'dark' && <Check className="h-3 w-3 text-primary" />}
                   </Button>
-                  <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-primary">
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-background to-zinc-900" />
+                  <Button
+                    variant="outline"
+                    className={`h-auto py-4 flex-col gap-2 ${theme === 'system' ? 'border-primary ring-2 ring-primary/20' : ''}`}
+                    onClick={() => setTheme('system')}
+                  >
+                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-white to-zinc-900" />
                     <span className="text-xs">Sistema</span>
+                    {theme === 'system' && <Check className="h-3 w-3 text-primary" />}
                   </Button>
                 </div>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Modo Compacto</p>
-                  <p className="text-sm text-muted-foreground">
-                    Reduz o espaçamento entre elementos
-                  </p>
-                </div>
-                <Switch />
               </div>
             </CardContent>
           </Card>
@@ -241,37 +429,86 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div>
-                <Label className="mb-2 block">Alterar Senha</Label>
-                <div className="space-y-4">
-                  <Input type="password" placeholder="Senha atual" />
-                  <Input type="password" placeholder="Nova senha" />
-                  <Input type="password" placeholder="Confirmar nova senha" />
-                  <Button>Alterar Senha</Button>
+              <form onSubmit={passwordForm.handleSubmit(handleChangePassword)} className="space-y-4">
+                <Label className="block">Alterar Senha</Label>
+                <div className="space-y-3">
+                  <div>
+                    <Input
+                      type="password"
+                      placeholder="Senha atual"
+                      {...passwordForm.register('currentPassword')}
+                    />
+                    {passwordForm.formState.errors.currentPassword && (
+                      <p className="text-sm text-destructive mt-1">
+                        {passwordForm.formState.errors.currentPassword.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Input
+                      type="password"
+                      placeholder="Nova senha"
+                      {...passwordForm.register('newPassword')}
+                    />
+                    {passwordForm.formState.errors.newPassword && (
+                      <p className="text-sm text-destructive mt-1">
+                        {passwordForm.formState.errors.newPassword.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Input
+                      type="password"
+                      placeholder="Confirmar nova senha"
+                      {...passwordForm.register('confirmPassword')}
+                    />
+                    {passwordForm.formState.errors.confirmPassword && (
+                      <p className="text-sm text-destructive mt-1">
+                        {passwordForm.formState.errors.confirmPassword.message}
+                      </p>
+                    )}
+                  </div>
+                  <Button type="submit" disabled={isChangingPassword}>
+                    {isChangingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Alterar Senha
+                  </Button>
                 </div>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Autenticação de Dois Fatores</p>
-                  <p className="text-sm text-muted-foreground">
-                    Adicione uma camada extra de segurança
-                  </p>
-                </div>
-                <Button variant="outline">Configurar</Button>
-              </div>
+              </form>
               <Separator />
               <div>
                 <p className="font-medium text-destructive">Zona de Perigo</p>
                 <p className="text-sm text-muted-foreground mb-4">
                   Ações irreversíveis relacionadas à sua conta
                 </p>
-                <Button variant="destructive">Excluir Conta</Button>
+                <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+                  Excluir Conta
+                </Button>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Delete Account Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir conta</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita e todos os seus dados serão perdidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteAccount}
+            >
+              Excluir minha conta
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

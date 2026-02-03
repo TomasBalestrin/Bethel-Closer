@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { supabase } from '@/services/supabase'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from 'sonner'
 import {
   AreaChart,
   Area,
@@ -74,19 +75,41 @@ export default function ReportsPage() {
     }
   })
 
-  // Monthly performance chart data
+  // Monthly performance chart data - real data from Supabase
   const { data: monthlyData } = useQuery({
     queryKey: ['monthly-performance', period],
     queryFn: async () => {
-      // Mock data - in production would aggregate from Supabase
-      return [
-        { name: 'Jan', calls: 320, sales: 48, revenue: 192000 },
-        { name: 'Fev', calls: 380, sales: 56, revenue: 248000 },
-        { name: 'Mar', calls: 420, sales: 68, revenue: 312000 },
-        { name: 'Abr', calls: 360, sales: 52, revenue: 228000 },
-        { name: 'Mai', calls: 450, sales: 72, revenue: 356000 },
-        { name: 'Jun', calls: 480, sales: 82, revenue: 412000 }
-      ]
+      const now = new Date()
+      const months: { name: string; calls: number; sales: number; revenue: number }[] = []
+      const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+      const numMonths = period === 'quarter' ? 3 : period === 'year' ? 12 : 6
+
+      for (let i = numMonths - 1; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+        const startISO = date.toISOString()
+        const endISO = endDate.toISOString()
+
+        const [callsResult, salesResult] = await Promise.all([
+          supabase.from('calls').select('id', { count: 'exact', head: true })
+            .gte('scheduled_at', startISO).lte('scheduled_at', endISO),
+          supabase.from('clients').select('sale_value')
+            .eq('status', 'closed_won')
+            .gte('created_at', startISO).lte('created_at', endISO)
+        ])
+
+        const revenue = salesResult.data?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
+
+        months.push({
+          name: monthNames[date.getMonth()],
+          calls: callsResult.count || 0,
+          sales: salesResult.data?.length || 0,
+          revenue
+        })
+      }
+
+      return months
     }
   })
 
@@ -128,6 +151,45 @@ export default function ReportsPage() {
     ? ((totals.sales / totals.calls) * 100).toFixed(1)
     : '0'
 
+  const handleExport = () => {
+    if (!teamStats || teamStats.length === 0) {
+      toast.error('Nenhum dado para exportar')
+      return
+    }
+
+    // Build CSV
+    const headers = ['Closer', 'Cargo', 'Clientes', 'Ligações', 'Vendas', 'Conversão (%)', 'Receita (R$)']
+    const rows = teamStats.map(stat => [
+      stat.name,
+      stat.role,
+      stat.clients,
+      stat.calls,
+      stat.sales,
+      stat.conversion,
+      stat.revenue
+    ])
+
+    // Add totals row
+    rows.push(['TOTAL', '-', totals.clients, totals.calls, totals.sales, overallConversion, totals.revenue])
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(row => row.join(';'))
+    ].join('\n')
+
+    // BOM for UTF-8 in Excel
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `relatorio-${period}-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Relatório exportado com sucesso!')
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -151,9 +213,9 @@ export default function ReportsPage() {
               <SelectItem value="year">Este ano</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
-            Exportar
+            Exportar CSV
           </Button>
         </div>
       </div>

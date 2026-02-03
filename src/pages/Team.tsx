@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Users,
   Phone,
@@ -8,14 +8,24 @@ import {
   Mail,
   MoreVertical,
   Search,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Progress } from '@/components/ui/progress'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { supabase } from '@/services/supabase'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface TeamMember {
   id: string
@@ -63,6 +74,12 @@ const roleBadgeVariants = {
 export default function TeamPage() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
+  const [memberGoalCalls, setMemberGoalCalls] = useState(100)
+  const [memberGoalSales, setMemberGoalSales] = useState(20)
+  const [memberGoalRevenue, setMemberGoalRevenue] = useState(100000)
+  const queryClient = useQueryClient()
 
   const { data: teamMembers = [], isLoading } = useQuery({
     queryKey: ['team-members'],
@@ -131,6 +148,58 @@ export default function TeamPage() {
     }),
     { members: 0, clients: 0, calls: 0, sales: 0, revenue: 0 }
   )
+
+  const saveGoal = useMutation({
+    mutationFn: async () => {
+      if (!selectedMember) return
+
+      const now = new Date()
+      const month = now.getMonth() + 1
+      const year = now.getFullYear()
+
+      const { error } = await supabase
+        .from('monthly_goals')
+        .upsert({
+          closer_id: selectedMember.id,
+          month,
+          year,
+          target_calls: memberGoalCalls,
+          target_sales: memberGoalSales,
+          target_revenue: memberGoalRevenue
+        }, {
+          onConflict: 'closer_id,month,year'
+        })
+
+      if (error) {
+        // Try insert if upsert fails
+        await supabase.from('monthly_goals').insert({
+          closer_id: selectedMember.id,
+          month,
+          year,
+          target_calls: memberGoalCalls,
+          target_sales: memberGoalSales,
+          target_revenue: memberGoalRevenue
+        })
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-members'] })
+      toast.success(`Meta definida para ${selectedMember?.name}!`)
+      setGoalDialogOpen(false)
+      setSelectedMember(null)
+    },
+    onError: (error) => {
+      toast.error('Erro ao salvar meta: ' + (error instanceof Error ? error.message : 'Erro'))
+    }
+  })
+
+  const openGoalDialog = (member: TeamMember) => {
+    setSelectedMember(member)
+    setMemberGoalCalls(100)
+    setMemberGoalSales(20)
+    setMemberGoalRevenue(100000)
+    setGoalDialogOpen(true)
+  }
 
   return (
     <div className="space-y-6">
@@ -322,7 +391,9 @@ export default function TeamPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem>Ver perfil</DropdownMenuItem>
                       <DropdownMenuItem>Ver clientes</DropdownMenuItem>
-                      <DropdownMenuItem>Definir meta</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openGoalDialog(member)}>
+                        Definir meta
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -331,6 +402,58 @@ export default function TeamPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Goal Setting Dialog */}
+      <Dialog open={goalDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setGoalDialogOpen(false)
+          setSelectedMember(null)
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definir Meta - {selectedMember?.name}</DialogTitle>
+            <DialogDescription>
+              Configure as metas mensais para este membro da equipe
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Meta de Ligações (mensal)</Label>
+              <Input
+                type="number"
+                value={memberGoalCalls}
+                onChange={(e) => setMemberGoalCalls(parseInt(e.target.value) || 0)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Meta de Vendas (mensal)</Label>
+              <Input
+                type="number"
+                value={memberGoalSales}
+                onChange={(e) => setMemberGoalSales(parseInt(e.target.value) || 0)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Meta de Receita (mensal, R$)</Label>
+              <Input
+                type="number"
+                value={memberGoalRevenue}
+                onChange={(e) => setMemberGoalRevenue(parseInt(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGoalDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => saveGoal.mutate()} disabled={saveGoal.isPending}>
+              {saveGoal.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Salvar Meta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
