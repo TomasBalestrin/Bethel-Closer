@@ -3,8 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield,
   Users,
-  UserPlus,
-  Settings,
   Database,
   Activity,
   Trash2,
@@ -22,15 +20,6 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
