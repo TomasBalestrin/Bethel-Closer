@@ -5,7 +5,8 @@ import {
   DollarSign,
   Target,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  BookOpen
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -13,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency } from '@/lib/utils'
+import { getDailyVerse } from '@/lib/verses'
 import {
   AreaChart,
   Area,
@@ -69,6 +71,7 @@ function StatCard({ title, value, description, icon, trend }: StatCardProps) {
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
+  const dailyVerse = getDailyVerse()
 
   const { data: stats } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -133,6 +136,27 @@ export default function DashboardPage() {
           Bem-vindo de volta, {user?.name}!
         </p>
       </div>
+
+      {/* Versículo do Dia */}
+      <Card className="bg-gradient-to-br from-[#0a0f1c] via-[#0d1424] to-[#0a1628] text-white border-0">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="h-12 w-12 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <BookOpen className="h-6 w-6 text-blue-400" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-blue-400 font-medium">Versículo do dia</p>
+              <p className="text-lg italic text-gray-100">"{dailyVerse.text}"</p>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-white">{dailyVerse.reference}</span>
+                <Badge variant="secondary" className="bg-white/10 text-gray-300 border-0">
+                  {dailyVerse.category}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
