@@ -13,6 +13,10 @@ import ClientsPage from '@/pages/Clients'
 import ClientDetailPage from '@/pages/ClientDetail'
 import CallsPage from '@/pages/Calls'
 import SettingsPage from '@/pages/Settings'
+import NotificationsPage from '@/pages/Notifications'
+import ReportsPage from '@/pages/Reports'
+import TeamPage from '@/pages/Team'
+import AdminPage from '@/pages/Admin'
 import NotFoundPage from '@/pages/NotFound'
 
 // Layout
@@ -68,6 +72,10 @@ function App() {
               <Route path="clients" element={<ClientsPage />} />
               <Route path="clients/:id" element={<ClientDetailPage />} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="team" element={<TeamPage />} />
+              <Route path="admin" element={<AdminPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
