@@ -14,11 +14,15 @@ import {
   Loader2,
   Eye,
   Pencil,
-  Trash2
+  Trash2,
+  DollarSign,
+  Tag,
+  Filter
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -27,13 +31,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
@@ -43,12 +47,22 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency, formatPhoneNumber, getInitials } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Client, ClientStatus, ClientSource } from '@/types'
+import type { Client, ClientStatus, ClientSource, TicketType } from '@/types'
 
 const clientSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -57,6 +71,9 @@ const clientSchema = z.object({
   company: z.string().optional(),
   status: z.enum(['lead', 'contacted', 'negotiating', 'closed_won', 'closed_lost']),
   source: z.enum(['organic', 'referral', 'ads', 'event', 'other']),
+  ticket_type: z.enum(['29_90', '12k', '80k']).optional().nullable(),
+  entry_value: z.number().optional().nullable(),
+  sale_value: z.number().optional().nullable(),
   notes: z.string().optional()
 })
 
@@ -86,10 +103,19 @@ const sourceLabels: Record<ClientSource, string> = {
   other: 'Outro'
 }
 
+const ticketTypeLabels: Record<TicketType, string> = {
+  '29_90': 'CRM Calls (R$ 29,90)',
+  '12k': 'CRM Intensivo (R$ 12k)',
+  '80k': 'Mentoria Premium (R$ 80k)'
+}
+
 export default function ClientsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [deleteClientId, setDeleteClientId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
+  const [ticketFilter, setTicketFilter] = useState<TicketType | 'all'>('all')
   const { profile } = useAuthStore()
   const queryClient = useQueryClient()
 
@@ -102,12 +128,49 @@ export default function ClientsPage() {
       company: '',
       status: 'lead',
       source: 'organic',
+      ticket_type: null,
+      entry_value: null,
+      sale_value: null,
       notes: ''
     }
   })
 
+  // Reset form when dialog opens/closes or editing changes
+  const openDialog = (client?: Client) => {
+    if (client) {
+      setEditingClient(client)
+      form.reset({
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        company: client.company || '',
+        status: client.status,
+        source: client.source,
+        ticket_type: client.ticket_type || null,
+        entry_value: client.entry_value || null,
+        sale_value: client.sale_value || null,
+        notes: client.notes || ''
+      })
+    } else {
+      setEditingClient(null)
+      form.reset({
+        name: '',
+        email: '',
+        phone: '',
+        company: '',
+        status: 'lead',
+        source: 'organic',
+        ticket_type: null,
+        entry_value: null,
+        sale_value: null,
+        notes: ''
+      })
+    }
+    setIsDialogOpen(true)
+  }
+
   const { data: clients, isLoading } = useQuery({
-    queryKey: ['clients', searchQuery, statusFilter],
+    queryKey: ['clients', searchQuery, statusFilter, ticketFilter],
     queryFn: async () => {
       let query = supabase
         .from('clients')
@@ -122,12 +185,29 @@ export default function ClientsPage() {
         query = query.eq('status', statusFilter)
       }
 
+      if (ticketFilter !== 'all') {
+        query = query.eq('ticket_type', ticketFilter)
+      }
+
       const { data, error } = await query
 
       if (error) throw error
       return data as Client[]
     }
   })
+
+  // Tags query - will be used in future for tag filtering
+  // const { data: tags = [] } = useQuery({
+  //   queryKey: ['tags'],
+  //   queryFn: async () => {
+  //     const { data, error } = await supabase
+  //       .from('tags')
+  //       .select('*')
+  //       .order('name')
+  //     if (error) throw error
+  //     return data as TagType[]
+  //   }
+  // })
 
   const createMutation = useMutation({
     mutationFn: async (data: ClientFormData) => {
@@ -148,6 +228,23 @@ export default function ClientsPage() {
     }
   })
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ClientFormData }) => {
+      const { error } = await supabase.from('clients').update(data).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      toast.success('Cliente atualizado com sucesso!')
+      setIsDialogOpen(false)
+      setEditingClient(null)
+      form.reset()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar cliente')
+    }
+  })
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('clients').delete().eq('id', id)
@@ -156,6 +253,7 @@ export default function ClientsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Cliente excluído com sucesso!')
+      setDeleteClientId(null)
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Erro ao excluir cliente')
@@ -163,105 +261,62 @@ export default function ClientsPage() {
   })
 
   const onSubmit = (data: ClientFormData) => {
-    createMutation.mutate(data)
+    if (editingClient) {
+      updateMutation.mutate({ id: editingClient.id, data })
+    } else {
+      createMutation.mutate(data)
+    }
   }
+
+  // Stats
+  const totalClients = clients?.length || 0
+  const leadCount = clients?.filter(c => c.status === 'lead').length || 0
+  const negotiatingCount = clients?.filter(c => c.status === 'negotiating').length || 0
+  const closedWonCount = clients?.filter(c => c.status === 'closed_won').length || 0
+  const totalRevenue = clients?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Clientes</h1>
+          <h1 className="text-3xl font-bold">Carteira de Clientes</h1>
           <p className="text-muted-foreground">
             Gerencie seus clientes e leads
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Cliente
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Novo Cliente</DialogTitle>
-              <DialogDescription>
-                Adicione um novo cliente ao seu CRM
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome</Label>
-                <Input id="name" {...form.register('name')} />
-                {form.formState.errors.name && (
-                  <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...form.register('email')} />
-                {form.formState.errors.email && (
-                  <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Telefone</Label>
-                <Input id="phone" {...form.register('phone')} />
-                {form.formState.errors.phone && (
-                  <p className="text-sm text-destructive">{form.formState.errors.phone.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="company">Empresa</Label>
-                <Input id="company" {...form.register('company')} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select
-                    value={form.watch('status')}
-                    onValueChange={(value) => form.setValue('status', value as ClientStatus)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(statusLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Origem</Label>
-                  <Select
-                    value={form.watch('source')}
-                    onValueChange={(value) => form.setValue('source', value as ClientSource)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(sourceLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Criar Cliente
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => openDialog()}>
+          <Plus className="h-4 w-4 mr-2" />
+          Novo Cliente
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{totalClients}</div>
+            <p className="text-sm text-muted-foreground">Total de Clientes</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-blue-600">{leadCount}</div>
+            <p className="text-sm text-muted-foreground">Leads</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-amber-600">{negotiatingCount}</div>
+            <p className="text-sm text-muted-foreground">Em Negociação</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalRevenue)}</div>
+            <p className="text-sm text-muted-foreground">{closedWonCount} Vendas Fechadas</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -280,11 +335,27 @@ export default function ClientsPage() {
           onValueChange={(value) => setStatusFilter(value as ClientStatus | 'all')}
         >
           <SelectTrigger className="w-full sm:w-[180px]">
+            <Filter className="h-4 w-4 mr-2" />
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="all">Todos os Status</SelectItem>
             {Object.entries(statusLabels).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={ticketFilter}
+          onValueChange={(value) => setTicketFilter(value as TicketType | 'all')}
+        >
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <Tag className="h-4 w-4 mr-2" />
+            <SelectValue placeholder="Produto" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Produtos</SelectItem>
+            {Object.entries(ticketTypeLabels).map(([value, label]) => (
               <SelectItem key={value} value={value}>{label}</SelectItem>
             ))}
           </SelectContent>
@@ -300,7 +371,7 @@ export default function ClientsPage() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-muted-foreground mb-4">Nenhum cliente encontrado</p>
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={() => openDialog()}>
               <Plus className="h-4 w-4 mr-2" />
               Adicionar primeiro cliente
             </Button>
@@ -339,13 +410,14 @@ export default function ClientsPage() {
                           Ver detalhes
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openDialog(client)}>
                         <Pencil className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => deleteMutation.mutate(client.id)}
+                        onClick={() => setDeleteClientId(client.id)}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Excluir
@@ -363,21 +435,208 @@ export default function ClientsPage() {
                   <Phone className="h-4 w-4" />
                   {formatPhoneNumber(client.phone)}
                 </div>
+                {client.ticket_type && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Tag className="h-4 w-4 text-primary" />
+                    <span className="font-medium">{ticketTypeLabels[client.ticket_type]}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between pt-2 border-t">
                   <Badge variant={statusColors[client.status]}>
                     {statusLabels[client.status]}
                   </Badge>
-                  {client.sale_value && (
-                    <span className="text-sm font-medium text-success">
+                  {client.sale_value ? (
+                    <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
                       {formatCurrency(client.sale_value)}
                     </span>
-                  )}
+                  ) : client.entry_value ? (
+                    <span className="text-sm text-muted-foreground flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      {formatCurrency(client.entry_value)}
+                    </span>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsDialogOpen(false)
+          setEditingClient(null)
+          form.reset()
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingClient ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
+            <DialogDescription>
+              {editingClient ? 'Atualize as informações do cliente' : 'Adicione um novo cliente ao seu CRM'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Basic Info */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome *</Label>
+                <Input id="name" {...form.register('name')} />
+                {form.formState.errors.name && (
+                  <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <Input id="email" type="email" {...form.register('email')} />
+                {form.formState.errors.email && (
+                  <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Telefone *</Label>
+                <Input id="phone" {...form.register('phone')} placeholder="(11) 99999-9999" />
+                {form.formState.errors.phone && (
+                  <p className="text-sm text-destructive">{form.formState.errors.phone.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="company">Empresa</Label>
+                <Input id="company" {...form.register('company')} />
+              </div>
+            </div>
+
+            {/* Status and Source */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={form.watch('status')}
+                  onValueChange={(value) => form.setValue('status', value as ClientStatus)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Origem</Label>
+                <Select
+                  value={form.watch('source')}
+                  onValueChange={(value) => form.setValue('source', value as ClientSource)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(sourceLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Ticket Type and Values */}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Produto/Ticket</Label>
+                <Select
+                  value={form.watch('ticket_type') || ''}
+                  onValueChange={(value) => form.setValue('ticket_type', value as TicketType || null)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Nenhum</SelectItem>
+                    {Object.entries(ticketTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="entry_value">Valor de Entrada</Label>
+                <Input
+                  id="entry_value"
+                  type="number"
+                  step="0.01"
+                  placeholder="R$ 0,00"
+                  {...form.register('entry_value', { valueAsNumber: true })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sale_value">Valor da Venda</Label>
+                <Input
+                  id="sale_value"
+                  type="number"
+                  step="0.01"
+                  placeholder="R$ 0,00"
+                  {...form.register('sale_value', { valueAsNumber: true })}
+                />
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label htmlFor="notes">Observações</Label>
+              <Textarea
+                id="notes"
+                {...form.register('notes')}
+                placeholder="Adicione observações sobre o cliente..."
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setIsDialogOpen(false)
+                setEditingClient(null)
+                form.reset()
+              }}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                {editingClient ? 'Salvar Alterações' : 'Criar Cliente'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteClientId} onOpenChange={() => setDeleteClientId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.
+              Todas as ligações e atividades relacionadas também serão removidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteClientId && deleteMutation.mutate(deleteClientId)}
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -7,8 +7,6 @@ import {
   DollarSign,
   Mail,
   MoreVertical,
-  TrendingUp,
-  TrendingDown,
   Search,
   Filter
 } from 'lucide-react'
@@ -32,7 +30,6 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { supabase } from '@/services/supabase'
-import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency } from '@/lib/utils'
 
 interface TeamMember {
@@ -64,7 +61,6 @@ const roleBadgeVariants = {
 } as const
 
 export default function TeamPage() {
-  const { profile } = useAuthStore()
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
 

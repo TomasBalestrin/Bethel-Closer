@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { supabase } from '@/services/supabase'
+// Supabase will be used when notifications are fully implemented
+// import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'

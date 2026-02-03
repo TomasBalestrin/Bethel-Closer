@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  BarChart3,
   TrendingUp,
-  TrendingDown,
   Users,
   Phone,
   DollarSign,
@@ -17,7 +15,6 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { supabase } from '@/services/supabase'
-import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency } from '@/lib/utils'
 import {
   AreaChart,
@@ -38,7 +35,6 @@ import {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
 
 export default function ReportsPage() {
-  const { profile } = useAuthStore()
   const [period, setPeriod] = useState('month')
 
   // Fetch team performance data
