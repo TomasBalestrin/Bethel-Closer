@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, Trash2, Phone, UserPlus, DollarSign, Calendar } from 'lucide-react'
+import { Bell, Check, CheckCheck, Trash2, Phone, UserPlus, DollarSign, Calendar, Trophy, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-// Supabase will be used when notifications are fully implemented
-// import { supabase } from '@/services/supabase'
+import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
@@ -14,6 +13,7 @@ import { ptBR } from 'date-fns/locale'
 
 interface Notification {
   id: string
+  user_id: string
   type: 'call_scheduled' | 'client_added' | 'sale_closed' | 'call_reminder' | 'goal_achieved'
   title: string
   message: string
@@ -27,68 +27,158 @@ const notificationIcons = {
   client_added: UserPlus,
   sale_closed: DollarSign,
   call_reminder: Phone,
-  goal_achieved: Check
+  goal_achieved: Trophy
 }
 
-// Mock notifications for now - in production would come from Supabase
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'call_scheduled',
-    title: 'Ligação agendada',
-    message: 'Você tem uma ligação com João Silva às 14:00',
-    read: false,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: '2',
-    type: 'sale_closed',
-    title: 'Venda realizada!',
-    message: 'Parabéns! Venda de R$ 12.000 fechada com Maria Santos',
-    read: false,
-    created_at: new Date(Date.now() - 3600000).toISOString()
-  },
-  {
-    id: '3',
-    type: 'client_added',
-    title: 'Novo cliente',
-    message: 'Carlos Oliveira foi adicionado à sua carteira',
-    read: true,
-    created_at: new Date(Date.now() - 86400000).toISOString()
-  },
-  {
-    id: '4',
-    type: 'goal_achieved',
-    title: 'Meta atingida!',
-    message: 'Você atingiu 80% da meta mensal de ligações',
-    read: true,
-    created_at: new Date(Date.now() - 172800000).toISOString()
-  }
-]
+const notificationColors = {
+  call_scheduled: 'bg-blue-100 text-blue-600',
+  client_added: 'bg-green-100 text-green-600',
+  sale_closed: 'bg-emerald-100 text-emerald-600',
+  call_reminder: 'bg-orange-100 text-orange-600',
+  goal_achieved: 'bg-yellow-100 text-yellow-600'
+}
 
 export default function NotificationsPage() {
   const { profile } = useAuthStore()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
-  const { data: notifications = mockNotifications } = useQuery({
+  // Fetch notifications from Supabase
+  const { data: notifications = [], isLoading } = useQuery({
     queryKey: ['notifications', profile?.id],
     queryFn: async () => {
-      // In production, fetch from Supabase
-      // const { data } = await supabase
-      //   .from('notifications')
-      //   .select('*')
-      //   .eq('user_id', profile?.id)
-      //   .order('created_at', { ascending: false })
-      // return data || []
-      return mockNotifications
+      if (!profile?.id) return []
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        // If table doesn't exist, generate notifications from recent activities
+        return await generateNotificationsFromActivity()
+      }
+
+      return (data || []) as Notification[]
     }
   })
 
+  // Generate notifications from real activity data when table doesn't exist
+  async function generateNotificationsFromActivity(): Promise<Notification[]> {
+    if (!profile?.id) return []
+
+    const notifications: Notification[] = []
+
+    // Get recent calls
+    const { data: recentCalls } = await supabase
+      .from('calls')
+      .select(`*, client:clients(name)`)
+      .eq('closer_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    recentCalls?.forEach(call => {
+      if (call.status === 'scheduled') {
+        const callDate = new Date(call.scheduled_at)
+        const now = new Date()
+        const isUpcoming = callDate > now && callDate.getTime() - now.getTime() < 24 * 60 * 60 * 1000
+
+        if (isUpcoming) {
+          notifications.push({
+            id: `call-reminder-${call.id}`,
+            user_id: profile.id,
+            type: 'call_reminder',
+            title: 'Lembrete de ligação',
+            message: `Você tem uma ligação agendada com ${call.client?.name || 'cliente'} em breve`,
+            read: false,
+            created_at: call.created_at
+          })
+        }
+
+        notifications.push({
+          id: `call-scheduled-${call.id}`,
+          user_id: profile.id,
+          type: 'call_scheduled',
+          title: 'Ligação agendada',
+          message: `Ligação com ${call.client?.name || 'cliente'} agendada para ${new Date(call.scheduled_at).toLocaleDateString('pt-BR')}`,
+          read: true,
+          created_at: call.created_at
+        })
+      }
+
+      if (call.status === 'completed') {
+        notifications.push({
+          id: `call-completed-${call.id}`,
+          user_id: profile.id,
+          type: 'call_scheduled',
+          title: 'Ligação concluída',
+          message: `Ligação com ${call.client?.name || 'cliente'} foi concluída${call.duration_minutes ? ` (${call.duration_minutes} min)` : ''}`,
+          read: true,
+          created_at: call.updated_at || call.created_at
+        })
+      }
+    })
+
+    // Get recent sales
+    const { data: recentSales } = await supabase
+      .from('clients')
+      .select('id, name, sale_value, updated_at')
+      .eq('closer_id', profile.id)
+      .eq('status', 'closed_won')
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    recentSales?.forEach(sale => {
+      notifications.push({
+        id: `sale-${sale.id}`,
+        user_id: profile.id,
+        type: 'sale_closed',
+        title: 'Venda realizada!',
+        message: `Venda fechada com ${sale.name}${sale.sale_value ? ` - R$ ${sale.sale_value.toLocaleString('pt-BR')}` : ''}`,
+        read: true,
+        created_at: sale.updated_at
+      })
+    })
+
+    // Get recently added clients
+    const { data: recentClients } = await supabase
+      .from('clients')
+      .select('id, name, created_at')
+      .eq('closer_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    recentClients?.forEach(client => {
+      notifications.push({
+        id: `client-${client.id}`,
+        user_id: profile.id,
+        type: 'client_added',
+        title: 'Novo cliente',
+        message: `${client.name} foi adicionado à sua carteira`,
+        read: true,
+        created_at: client.created_at
+      })
+    })
+
+    // Sort by date
+    notifications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+    return notifications
+  }
+
   const markAsRead = useMutation({
     mutationFn: async (id: string) => {
-      // In production, update in Supabase
-      // await supabase.from('notifications').update({ read: true }).eq('id', id)
+      // Try to update in Supabase
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id)
+
+      if (error) {
+        // Table might not exist, just invalidate to regenerate
+        console.warn('Notifications table not available')
+      }
       return id
     },
     onSuccess: () => {
@@ -99,8 +189,17 @@ export default function NotificationsPage() {
 
   const markAllAsRead = useMutation({
     mutationFn: async () => {
-      // In production, update all in Supabase
-      return true
+      if (!profile?.id) return
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', profile.id)
+        .eq('read', false)
+
+      if (error) {
+        console.warn('Notifications table not available')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
@@ -110,7 +209,14 @@ export default function NotificationsPage() {
 
   const deleteNotification = useMutation({
     mutationFn: async (id: string) => {
-      // In production, delete from Supabase
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        console.warn('Notifications table not available')
+      }
       return id
     },
     onSuccess: () => {
@@ -172,7 +278,11 @@ export default function NotificationsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {filteredNotifications.length === 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredNotifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Bell className="h-12 w-12 text-muted-foreground/50 mb-4" />
                   <h3 className="text-lg font-medium">Nenhuma notificação</h3>
@@ -187,6 +297,7 @@ export default function NotificationsPage() {
                 <div className="space-y-3">
                   {filteredNotifications.map((notification) => {
                     const Icon = notificationIcons[notification.type] || Bell
+                    const colorClass = notificationColors[notification.type] || 'bg-gray-100 text-gray-600'
                     return (
                       <div
                         key={notification.id}
@@ -197,9 +308,7 @@ export default function NotificationsPage() {
                         }`}
                       >
                         <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          notification.read
-                            ? 'bg-muted text-muted-foreground'
-                            : 'bg-blue-100 text-blue-600'
+                          notification.read ? 'bg-muted text-muted-foreground' : colorClass
                         }`}>
                           <Icon className="h-5 w-5" />
                         </div>

@@ -11,7 +11,8 @@ import {
   Check,
   X,
   Tag,
-  Target
+  Target,
+  Loader2
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -68,6 +69,9 @@ export default function AdminPage() {
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#6366f1')
+  const [goalCalls, setGoalCalls] = useState(100)
+  const [goalSales, setGoalSales] = useState(20)
+  const [goalRevenue, setGoalRevenue] = useState(100000)
 
   // Fetch all users
   const { data: users = [] } = useQuery({
@@ -170,6 +174,80 @@ export default function AdminPage() {
     },
     onError: (error) => {
       toast.error('Erro ao criar tag: ' + error.message)
+    }
+  })
+
+  // Fetch current global goals
+  useQuery({
+    queryKey: ['admin-goals'],
+    queryFn: async () => {
+      const now = new Date()
+      const { data } = await supabase
+        .from('monthly_goals')
+        .select('*')
+        .eq('month', now.getMonth() + 1)
+        .eq('year', now.getFullYear())
+        .limit(1)
+
+      if (data?.[0]) {
+        setGoalCalls(data[0].target_calls || 100)
+        setGoalSales(data[0].target_sales || 20)
+        setGoalRevenue(data[0].target_revenue || 100000)
+      }
+      return data?.[0] || null
+    }
+  })
+
+  // Save monthly goals
+  const saveGoals = useMutation({
+    mutationFn: async () => {
+      const now = new Date()
+      const month = now.getMonth() + 1
+      const year = now.getFullYear()
+
+      // Get all team members
+      const { data: members } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('role', ['closer', 'lider'])
+
+      if (!members) return
+
+      // Upsert goals for all members
+      for (const member of members) {
+        const { error } = await supabase
+          .from('monthly_goals')
+          .upsert({
+            closer_id: member.id,
+            month,
+            year,
+            target_calls: goalCalls,
+            target_sales: goalSales,
+            target_revenue: goalRevenue
+          }, {
+            onConflict: 'closer_id,month,year'
+          })
+
+        if (error) {
+          // Try insert if upsert fails
+          await supabase.from('monthly_goals').insert({
+            closer_id: member.id,
+            month,
+            year,
+            target_calls: goalCalls,
+            target_sales: goalSales,
+            target_revenue: goalRevenue
+          })
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-goals'] })
+      queryClient.invalidateQueries({ queryKey: ['monthly-goal'] })
+      toast.success('Metas salvas com sucesso para toda a equipe!')
+    },
+    onError: (error) => {
+      toast.error('Erro ao salvar metas: ' + (error instanceof Error ? error.message : 'Erro desconhecido'))
     }
   })
 
@@ -469,7 +547,8 @@ export default function AdminPage() {
                   <Input
                     id="goalCalls"
                     type="number"
-                    defaultValue={100}
+                    value={goalCalls}
+                    onChange={(e) => setGoalCalls(parseInt(e.target.value) || 0)}
                     className="mt-1"
                   />
                 </div>
@@ -478,7 +557,8 @@ export default function AdminPage() {
                   <Input
                     id="goalSales"
                     type="number"
-                    defaultValue={20}
+                    value={goalSales}
+                    onChange={(e) => setGoalSales(parseInt(e.target.value) || 0)}
                     className="mt-1"
                   />
                 </div>
@@ -487,14 +567,21 @@ export default function AdminPage() {
                   <Input
                     id="goalRevenue"
                     type="number"
-                    defaultValue={100000}
+                    value={goalRevenue}
+                    onChange={(e) => setGoalRevenue(parseInt(e.target.value) || 0)}
                     className="mt-1"
                   />
                 </div>
               </div>
-              <Button>Salvar Metas</Button>
+              <Button
+                onClick={() => saveGoals.mutate()}
+                disabled={saveGoals.isPending}
+              >
+                {saveGoals.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Salvar Metas
+              </Button>
               <p className="text-sm text-muted-foreground">
-                As metas individuais podem ser configuradas na página de equipe
+                As metas serão aplicadas a todos os membros da equipe. Metas individuais podem ser configuradas na página de equipe.
               </p>
             </CardContent>
           </Card>
