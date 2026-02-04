@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, User, Bell, Shield, Palette, Check } from 'lucide-react'
+import { Loader2, User, Bell, Shield, Palette, Check, FileUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +25,7 @@ import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { getInitials } from '@/lib/utils'
 import { toast } from 'sonner'
+import ImportPage from '@/pages/Import'
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -238,6 +239,10 @@ export default function SettingsPage() {
             <Shield className="h-4 w-4" />
             Segurança
           </TabsTrigger>
+          <TabsTrigger value="import" className="gap-2">
+            <FileUp className="h-4 w-4" />
+            Importar Dados
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -417,6 +422,10 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="import">
+          <ImportPage />
         </TabsContent>
 
         <TabsContent value="security">
