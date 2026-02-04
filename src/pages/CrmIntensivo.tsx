@@ -126,13 +126,13 @@ interface TabDef {
 }
 
 const tabs: TabDef[] = [
-  { id: 'total', label: 'Total', icon: <Users className="h-4 w-4" />, color: 'text-gray-900', stages: [] },
-  { id: 'abordagem', label: 'Abordagem', icon: <MessageSquare className="h-4 w-4" />, color: 'text-blue-600', stages: ['abordagem_inicial', 'nivel_consciencia', 'convite_intensivo', 'aguardando_confirmacao'] },
-  { id: 'confirmados', label: 'Confirmados', icon: <CheckCircle2 className="h-4 w-4" />, color: 'text-green-600', stages: ['confirmados'] },
-  { id: 'ingressos', label: 'Ingressos', icon: <Ticket className="h-4 w-4" />, color: 'text-blue-800', stages: ['retirado_ingresso'] },
-  { id: 'compareceram', label: 'Compareceram', icon: <Users className="h-4 w-4" />, color: 'text-emerald-700', stages: ['compareceram'] },
-  { id: 'nao_compareceram', label: 'Não Comparec.', icon: <UserX className="h-4 w-4" />, color: 'text-red-600', stages: ['nao_compareceram'] },
-  { id: 'sem_interesse', label: 'Sem Interesse', icon: <XCircle className="h-4 w-4" />, color: 'text-gray-500', stages: ['sem_interesse'] }
+  { id: 'total', label: 'Total', icon: <Users className="h-4 w-4" />, color: 'text-foreground', stages: [] },
+  { id: 'abordagem', label: 'Abordagem', icon: <MessageSquare className="h-4 w-4" />, color: 'text-blue-600 dark:text-blue-400', stages: ['abordagem_inicial', 'nivel_consciencia', 'convite_intensivo', 'aguardando_confirmacao'] },
+  { id: 'confirmados', label: 'Confirmados', icon: <CheckCircle2 className="h-4 w-4" />, color: 'text-green-600 dark:text-green-400', stages: ['confirmados'] },
+  { id: 'ingressos', label: 'Ingressos', icon: <Ticket className="h-4 w-4" />, color: 'text-blue-700 dark:text-blue-300', stages: ['retirado_ingresso'] },
+  { id: 'compareceram', label: 'Compareceram', icon: <Users className="h-4 w-4" />, color: 'text-emerald-700 dark:text-emerald-400', stages: ['compareceram'] },
+  { id: 'nao_compareceram', label: 'Não Comparec.', icon: <UserX className="h-4 w-4" />, color: 'text-red-600 dark:text-red-400', stages: ['nao_compareceram'] },
+  { id: 'sem_interesse', label: 'Sem Interesse', icon: <XCircle className="h-4 w-4" />, color: 'text-muted-foreground', stages: ['sem_interesse'] }
 ]
 
 export default function CrmIntensivoPage() {
@@ -406,7 +406,7 @@ export default function CrmIntensivoPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
+          <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
             <Flame className="h-6 w-6 text-orange-500" />
           </div>
           <div>
@@ -479,8 +479,8 @@ export default function CrmIntensivoPage() {
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
               activeTab === tab.id
-                ? 'bg-white shadow-sm border-gray-300'
-                : 'bg-transparent border-transparent hover:bg-gray-100'
+                ? 'bg-card shadow-sm border-border'
+                : 'bg-transparent border-transparent hover:bg-muted'
             } ${tab.color}`}
           >
             {tab.icon}
@@ -492,11 +492,11 @@ export default function CrmIntensivoPage() {
 
       {/* Event Info Card */}
       {currentEvent && (
-        <Card className="border-orange-200 bg-orange-50/30">
+        <Card className="border-orange-200 dark:border-orange-900 bg-orange-50/30 dark:bg-orange-950/20">
           <CardContent className="py-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-lg bg-orange-100 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
                   <Calendar className="h-6 w-6 text-orange-600" />
                 </div>
                 <div>
@@ -542,7 +542,7 @@ export default function CrmIntensivoPage() {
                     <div className="text-xs text-muted-foreground">Ingressos</div>
                   </div>
                   <div className="text-center">
-                    <div className="font-bold text-green-600">{eventStats.comparecimentoPct}%</div>
+                    <div className="font-bold text-green-600 dark:text-green-400">{eventStats.comparecimentoPct}%</div>
                     <div className="text-xs text-muted-foreground">Comparecimento</div>
                   </div>
                 </div>
@@ -567,9 +567,9 @@ export default function CrmIntensivoPage() {
 
       {/* Countdown Banner */}
       {currentEvent && daysUntilEvent > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 flex items-center gap-2">
+        <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg px-4 py-3 flex items-center gap-2">
           <Timer className="h-5 w-5 text-orange-500" />
-          <span className="text-orange-600 font-semibold">
+          <span className="text-orange-600 dark:text-orange-400 font-semibold">
             Faltam {daysUntilEvent} dias para o evento
           </span>
         </div>
@@ -601,7 +601,7 @@ export default function CrmIntensivoPage() {
             {visibleColumns.map(column => (
               <div
                 key={column.id}
-                className="flex-shrink-0 w-[260px] rounded-lg bg-white border border-gray-200 flex flex-col"
+                className="flex-shrink-0 w-[260px] rounded-lg bg-card border border-border flex flex-col"
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, column.id)}
               >

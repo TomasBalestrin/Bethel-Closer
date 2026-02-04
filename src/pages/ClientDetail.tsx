@@ -399,19 +399,19 @@ export default function ClientDetailPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-blue-600">{scheduledCalls}</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{scheduledCalls}</div>
             <p className="text-sm text-muted-foreground">Agendadas</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">{completedCalls}</div>
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{completedCalls}</div>
             <p className="text-sm text-muted-foreground">Concluídas</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               {client.sale_value ? formatCurrency(client.sale_value) : '-'}
             </div>
             <p className="text-sm text-muted-foreground">Valor da Venda</p>
@@ -492,7 +492,7 @@ export default function ClientDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Valor da Venda</p>
-                        <p className="font-medium text-green-600">{formatCurrency(client.sale_value)}</p>
+                        <p className="font-medium text-green-600 dark:text-green-400">{formatCurrency(client.sale_value)}</p>
                       </div>
                     </div>
                   )}

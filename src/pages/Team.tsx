@@ -382,7 +382,7 @@ export default function TeamPage() {
                       <p className="text-xs text-muted-foreground">Vendas</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                         {formatCurrency(member.stats.revenue)}
                       </p>
                       <p className="text-xs text-muted-foreground">Receita</p>

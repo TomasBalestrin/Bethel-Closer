@@ -42,25 +42,25 @@ const productConfig: Record<TicketType, { name: string; icon: React.ReactNode; b
   '29_90': {
     name: 'Elite Premium',
     icon: <ShoppingCart className="h-5 w-5 text-white" />,
-    bgColor: 'bg-purple-50',
+    bgColor: 'bg-purple-50 dark:bg-purple-950/30',
     iconBg: 'bg-purple-600'
   },
   '12k': {
     name: 'Implementação Comercial',
     icon: <Building2 className="h-5 w-5 text-white" />,
-    bgColor: 'bg-gray-50',
-    iconBg: 'bg-gray-600'
+    bgColor: 'bg-muted',
+    iconBg: 'bg-gray-600 dark:bg-gray-500'
   },
   '80k': {
     name: 'Mentoria Premium Julia',
     icon: <GraduationCap className="h-5 w-5 text-white" />,
-    bgColor: 'bg-emerald-50',
+    bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
     iconBg: 'bg-emerald-500'
   },
   'impl_ia': {
     name: 'Implementação de IA',
     icon: <Monitor className="h-5 w-5 text-white" />,
-    bgColor: 'bg-teal-50',
+    bgColor: 'bg-teal-50 dark:bg-teal-950/30',
     iconBg: 'bg-teal-500'
   }
 }
@@ -104,13 +104,13 @@ interface MetricCardProps {
 
 function MetricCard({ title, value, icon, variant = 'default' }: MetricCardProps) {
   const bgColors = {
-    default: 'bg-white',
-    green: 'bg-emerald-50',
-    orange: 'bg-orange-50'
+    default: 'bg-card',
+    green: 'bg-emerald-50 dark:bg-emerald-950/30',
+    orange: 'bg-orange-50 dark:bg-orange-950/30'
   }
 
   const iconBgColors = {
-    default: 'bg-gray-100 text-gray-600',
+    default: 'bg-muted text-muted-foreground',
     green: 'bg-emerald-500 text-white',
     orange: 'bg-orange-400 text-white'
   }
@@ -120,8 +120,8 @@ function MetricCard({ title, value, icon, variant = 'default' }: MetricCardProps
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-sm text-gray-600 mb-1">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-sm text-muted-foreground mb-1">{title}</p>
+            <p className="text-2xl font-bold text-foreground">{value}</p>
           </div>
           <div className={`h-10 w-10 rounded-full flex items-center justify-center ${iconBgColors[variant]}`}>
             {icon}
@@ -148,13 +148,13 @@ function ProductCard({ name, icon, iconBg, bgColor, count, callsPercent, sales, 
     <Card className={`${bgColor} border shadow-sm`}>
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
-          <p className="text-sm font-medium text-gray-700">{name}</p>
+          <p className="text-sm font-medium text-foreground/80">{name}</p>
           <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${iconBg}`}>
             {icon}
           </div>
         </div>
-        <p className="text-3xl font-bold text-gray-900 mb-2">{count}</p>
-        <p className="text-xs text-gray-500">
+        <p className="text-3xl font-bold text-foreground mb-2">{count}</p>
+        <p className="text-xs text-muted-foreground">
           {callsPercent.toFixed(0)}% das calls | {sales} vendas
           <br />
           ({conversionRate.toFixed(0)}% conv.)
@@ -281,20 +281,20 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
               {getGreeting()}, {userName}!
             </h1>
             <Badge className={`${roleInfo.color} text-white border-0 px-3 py-1`}>
               {roleInfo.label}
             </Badge>
           </div>
-          <p className="text-gray-500">
+          <p className="text-muted-foreground">
             Confira seu desempenho e acompanhe suas metas
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Select value={funnelFilter} onValueChange={setFunnelFilter}>
-            <SelectTrigger className="w-[180px] bg-white">
+            <SelectTrigger className="w-[180px] bg-card">
               <SelectValue placeholder="Todos os Funis" />
             </SelectTrigger>
             <SelectContent>
@@ -307,7 +307,7 @@ export default function DashboardPage() {
           </Select>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="bg-white">
+              <Button variant="outline" className="bg-card">
                 <Calendar className="h-4 w-4 mr-2" />
                 {dateRange.label}
               </Button>
@@ -322,21 +322,21 @@ export default function DashboardPage() {
       </div>
 
       {/* Versículo do Dia */}
-      <Card className="bg-gray-50 border shadow-sm">
+      <Card className="bg-muted border shadow-sm">
         <CardContent className="p-5">
           <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-xl bg-gray-200 flex items-center justify-center flex-shrink-0">
-              <BookOpen className="h-6 w-6 text-gray-600" />
+            <div className="h-12 w-12 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0">
+              <BookOpen className="h-6 w-6 text-muted-foreground" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                <p className="text-sm font-medium text-blue-600">Versículo do Dia</p>
-                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                <p className="text-sm font-medium text-primary">Versículo do Dia</p>
+                <Badge variant="secondary" className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border-0 text-xs">
                   {dailyVerse.category}
                 </Badge>
               </div>
-              <p className="text-gray-800 mb-2">"{dailyVerse.text}"</p>
-              <p className="text-sm font-semibold text-gray-700">— {dailyVerse.reference}</p>
+              <p className="text-foreground mb-2">"{dailyVerse.text}"</p>
+              <p className="text-sm font-semibold text-foreground/80">— {dailyVerse.reference}</p>
             </div>
           </div>
         </CardContent>
@@ -348,11 +348,11 @@ export default function DashboardPage() {
         <Card className="border shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Target className="h-4 w-4 text-gray-500" />
-              <span className="font-medium text-gray-900">Cota Mínima</span>
+              <Target className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium text-foreground">Cota Mínima</span>
             </div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-muted-foreground">
                 {formatCurrency(stats?.totalSaleValue || 0)} de {formatCurrency(cotaMinima)}
               </span>
               <span className="text-sm font-medium">{Math.min(cotaProgress, 100).toFixed(0)}%</span>
@@ -368,20 +368,20 @@ export default function DashboardPage() {
         <Card className="border shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Flag className="h-4 w-4 text-gray-500" />
-              <span className="font-medium text-gray-900">Meta Mensal</span>
+              <Flag className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium text-foreground">Meta Mensal</span>
             </div>
             {monthlyGoal ? (
               <div className="space-y-2">
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Meta de vendas: {formatCurrency(monthlyGoal.target_revenue || 0)}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Meta de ligações: {monthlyGoal.target_calls || 0}
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-blue-600">
+              <p className="text-sm text-primary">
                 Meta não definida pelo líder
               </p>
             )}
@@ -435,7 +435,7 @@ export default function DashboardPage() {
 
       {/* Número de Ofertas por Produto */}
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Número de Ofertas por Produto</h2>
+        <h2 className="text-lg font-bold text-foreground mb-4">Número de Ofertas por Produto</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {Object.entries(productConfig).map(([key, config]) => {
             const ticketType = key as TicketType

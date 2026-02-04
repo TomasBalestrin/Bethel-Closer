@@ -127,10 +127,10 @@ const classificationIcons: Record<CallClassification, React.ReactNode> = {
 }
 
 const classificationColors: Record<CallClassification, string> = {
-  hot: 'bg-red-100 text-red-700 border-red-200',
-  warm: 'bg-orange-100 text-orange-700 border-orange-200',
-  cold: 'bg-blue-100 text-blue-700 border-blue-200',
-  not_qualified: 'bg-gray-100 text-gray-700 border-gray-200'
+  hot: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
+  warm: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800',
+  cold: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+  not_qualified: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
 }
 
 export default function CallsPage() {
@@ -539,13 +539,13 @@ export default function CallsPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-blue-600">{filteredCalls.filter(c => c.status === 'scheduled').length}</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{filteredCalls.filter(c => c.status === 'scheduled').length}</div>
             <p className="text-sm text-muted-foreground">Agendadas</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-red-600 flex items-center gap-2">
+            <div className="text-2xl font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
               <Flame className="h-5 w-5" />
               {hotCalls}
             </div>
@@ -554,7 +554,7 @@ export default function CallsPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">{avgScore.toFixed(0)}%</div>
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{avgScore.toFixed(0)}%</div>
             <p className="text-sm text-muted-foreground">Score Médio IA</p>
           </CardContent>
         </Card>

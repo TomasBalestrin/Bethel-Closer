@@ -74,20 +74,20 @@ export function AppLayout() {
     <>
       {/* Logo */}
       <div className={cn(
-        'flex items-center h-16 px-4 border-b border-white/10',
+        'flex items-center h-16 px-4 border-b border-sidebar-border',
         collapsed ? 'justify-center' : 'justify-between'
       )}>
         <div className="flex items-center gap-3">
           <img src={logo} alt="Bethel Closer" className="h-8 w-auto" />
           {!collapsed && (
-            <span className="text-lg font-semibold text-white">Bethel Closer</span>
+            <span className="text-lg font-semibold text-sidebar-foreground">Bethel Closer</span>
           )}
         </div>
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            'text-white/60 hover:text-white hover:bg-white/10 hidden lg:flex',
+            'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex',
             collapsed && 'lg:hidden'
           )}
           onClick={() => setCollapsed(!collapsed)}
@@ -98,7 +98,7 @@ export function AppLayout() {
         <Button
           variant="ghost"
           size="icon"
-          className="text-white/60 hover:text-white hover:bg-white/10 lg:hidden"
+          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent lg:hidden"
           onClick={() => setMobileOpen(false)}
         >
           <X className="h-5 w-5" />
@@ -110,7 +110,7 @@ export function AppLayout() {
         <Button
           variant="ghost"
           size="icon"
-          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-[#0a0f1c] border border-white/20 text-white/60 hover:text-white hover:bg-white/10 hidden lg:flex"
+          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-sidebar-border text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex"
           onClick={() => setCollapsed(false)}
         >
           <ChevronRight className="h-4 w-4" />
@@ -129,8 +129,8 @@ export function AppLayout() {
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
                   isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white',
+                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground',
                   collapsed && 'justify-center px-2 lg:justify-center'
                 )
               }
@@ -146,11 +146,11 @@ export function AppLayout() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-sidebar-border p-3">
         <button
           onClick={handleSignOut}
           className={cn(
-            'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-all duration-200',
+            'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200',
             collapsed && 'justify-center px-2 lg:justify-center'
           )}
           title={collapsed ? 'Sair' : undefined}
@@ -165,7 +165,7 @@ export function AppLayout() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
@@ -177,7 +177,7 @@ export function AppLayout() {
       {/* Mobile Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col w-[264px] bg-[#0a0f1c] transition-transform duration-300 lg:hidden',
+          'fixed inset-y-0 left-0 z-50 flex flex-col w-[264px] sidebar transition-transform duration-300 lg:hidden',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -187,7 +187,7 @@ export function AppLayout() {
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 hidden lg:flex flex-col bg-[#0a0f1c] transition-all duration-300',
+          'fixed inset-y-0 left-0 z-50 hidden lg:flex flex-col sidebar transition-all duration-300',
           collapsed ? 'w-[72px]' : 'w-[264px]'
         )}
       >
@@ -202,7 +202,7 @@ export function AppLayout() {
         )}
       >
         {/* Mobile header */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-white px-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-card px-4 lg:hidden">
           <Button
             variant="ghost"
             size="icon"
