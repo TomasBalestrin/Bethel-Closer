@@ -31,11 +31,11 @@ const notificationIcons = {
 }
 
 const notificationColors = {
-  call_scheduled: 'bg-blue-100 text-blue-600',
-  client_added: 'bg-green-100 text-green-600',
-  sale_closed: 'bg-emerald-100 text-emerald-600',
-  call_reminder: 'bg-orange-100 text-orange-600',
-  goal_achieved: 'bg-yellow-100 text-yellow-600'
+  call_scheduled: 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400',
+  client_added: 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400',
+  sale_closed: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400',
+  call_reminder: 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400',
+  goal_achieved: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400'
 }
 
 export default function NotificationsPage() {
@@ -304,7 +304,7 @@ export default function NotificationsPage() {
                         className={`flex items-start gap-4 p-4 rounded-lg border transition-colors ${
                           notification.read
                             ? 'bg-muted/30 border-transparent'
-                            : 'bg-blue-50/50 border-blue-100'
+                            : 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-100 dark:border-blue-900'
                         }`}
                       >
                         <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${

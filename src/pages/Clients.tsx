@@ -333,19 +333,19 @@ export default function ClientsPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-blue-600">{leadCount}</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{leadCount}</div>
             <p className="text-sm text-muted-foreground">Leads</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-amber-600">{negotiatingCount}</div>
+            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{negotiatingCount}</div>
             <p className="text-sm text-muted-foreground">Em Negociação</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalRevenue)}</div>
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{formatCurrency(totalRevenue)}</div>
             <p className="text-sm text-muted-foreground">{closedWonCount} Vendas Fechadas</p>
           </CardContent>
         </Card>
@@ -515,7 +515,7 @@ export default function ClientsPage() {
                     {statusLabels[client.status]}
                   </Badge>
                   {client.sale_value ? (
-                    <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
                       <DollarSign className="h-3 w-3" />
                       {formatCurrency(client.sale_value)}
                     </span>

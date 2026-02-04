@@ -390,12 +390,12 @@ export default function CrmCallsPage() {
           {columns.map((column) => (
             <div
               key={column.id}
-              className={`flex-shrink-0 w-[300px] rounded-lg border-t-4 ${column.borderColor} bg-white border border-gray-200`}
+              className={`flex-shrink-0 w-[300px] rounded-lg border-t-4 ${column.borderColor} bg-card border border-border`}
               onDragOver={(e) => handleDragOver(e, column.id)}
               onDrop={(e) => handleDrop(e, column.id)}
             >
               {/* Column Header */}
-              <div className="p-3 border-b border-gray-100">
+              <div className="p-3 border-b border-border">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {column.icon}
@@ -416,7 +416,7 @@ export default function CrmCallsPage() {
               {/* Column Content */}
               <div className="p-2 space-y-2 min-h-[200px]">
                 {clientsByStage[column.id]?.length === 0 ? (
-                  <div className="flex items-center justify-center h-[120px] border-2 border-dashed border-gray-200 rounded-lg">
+                  <div className="flex items-center justify-center h-[120px] border-2 border-dashed border-border rounded-lg">
                     <p className="text-sm text-muted-foreground">Arraste clientes aqui</p>
                   </div>
                 ) : (
