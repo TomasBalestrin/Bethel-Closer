@@ -1,5 +1,5 @@
 // Google Drive API Service
-// Uses Google Identity Services (GIS) for OAuth2 and Drive API v3 REST endpoints
+// Uses Google Identity Services (GIS) for OAuth2 + Google Picker for file selection
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || ''
@@ -15,14 +15,8 @@ export interface DriveFile {
   name: string
   mimeType: string
   size?: string
-  modifiedTime: string
-  createdTime: string
-  webViewLink?: string
-}
-
-export interface DriveFolder {
-  id: string
-  name: string
+  modifiedTime?: string
+  url?: string
 }
 
 // ==========================================
@@ -31,6 +25,8 @@ export interface DriveFolder {
 
 let gisLoaded = false
 let gisLoadPromise: Promise<void> | null = null
+let gapiLoaded = false
+let gapiLoadPromise: Promise<void> | null = null
 
 function loadGIS(): Promise<void> {
   if (gisLoaded) return Promise.resolve()
@@ -58,6 +54,36 @@ function loadGIS(): Promise<void> {
   return gisLoadPromise
 }
 
+function loadGAPI(): Promise<void> {
+  if (gapiLoaded) return Promise.resolve()
+  if (gapiLoadPromise) return gapiLoadPromise
+
+  gapiLoadPromise = new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="apis.google.com/js/api.js"]')) {
+      gapiLoaded = true
+      resolve()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = 'https://apis.google.com/js/api.js'
+    script.async = true
+    script.defer = true
+    script.onload = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gapi = (window as any).gapi
+      gapi.load('picker', () => {
+        gapiLoaded = true
+        resolve()
+      })
+    }
+    script.onerror = () => reject(new Error('Falha ao carregar Google API'))
+    document.head.appendChild(script)
+  })
+
+  return gapiLoadPromise
+}
+
 // ==========================================
 // Auth
 // ==========================================
@@ -71,11 +97,6 @@ export function isConfigured(): boolean {
 
 export function hasValidToken(): boolean {
   return !!currentAccessToken && Date.now() < tokenExpiry
-}
-
-export function getAccessToken(): string | null {
-  if (hasValidToken()) return currentAccessToken
-  return null
 }
 
 export function clearToken(): void {
@@ -110,7 +131,6 @@ export async function authorize(): Promise<string> {
           return
         }
         currentAccessToken = response.access_token
-        // Token expires in ~3600s, set expiry with 5min buffer
         tokenExpiry = Date.now() + (response.expires_in - 300) * 1000
         resolve(response.access_token)
       },
@@ -121,6 +141,63 @@ export async function authorize(): Promise<string> {
     })
 
     tokenClient.requestAccessToken()
+  })
+}
+
+// ==========================================
+// Google Picker (file browser)
+// ==========================================
+
+export async function openPicker(): Promise<DriveFile[]> {
+  const token = await authorize()
+  await loadGAPI()
+
+  return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google
+
+    if (!google?.picker) {
+      reject(new Error('Google Picker não carregou'))
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const callback = (data: any) => {
+      if (data.action === google.picker.Action.PICKED) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const files: DriveFile[] = data.docs.map((doc: any) => ({
+          id: doc.id,
+          name: doc.name,
+          mimeType: doc.mimeType,
+          size: doc.sizeBytes?.toString(),
+          url: doc.url
+        }))
+        resolve(files)
+      } else if (data.action === google.picker.Action.CANCEL) {
+        resolve([])
+      }
+    }
+
+    try {
+      const docsView = new google.picker.DocsView()
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(false)
+        .setMode(google.picker.DocsViewMode.LIST)
+
+      const picker = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_API_KEY)
+        .setCallback(callback)
+        .setTitle('Selecione os arquivos para importar')
+        .setLocale('pt-BR')
+        .build()
+
+      picker.setVisible(true)
+    } catch (err) {
+      reject(err)
+    }
   })
 }
 
@@ -150,48 +227,6 @@ async function driveRequest(endpoint: string, token: string): Promise<Response> 
   return response
 }
 
-export async function getFolderInfo(folderId: string, token: string): Promise<DriveFolder> {
-  const response = await driveRequest(
-    `/files/${folderId}?fields=id,name&supportsAllDrives=true`,
-    token
-  )
-  return response.json()
-}
-
-export async function listFilesInFolder(
-  folderId: string,
-  token: string,
-  modifiedAfter?: string
-): Promise<DriveFile[]> {
-  let query = `'${folderId}' in parents and trashed = false`
-  if (modifiedAfter) {
-    query += ` and modifiedTime > '${modifiedAfter}'`
-  }
-
-  // Only fetch text-based files we can process
-  const mimeFilter = [
-    "mimeType = 'text/plain'",
-    "mimeType = 'text/csv'",
-    "mimeType = 'text/markdown'",
-    "mimeType = 'application/vnd.google-apps.document'",
-    "mimeType contains 'text/'",
-  ].join(' or ')
-  query += ` and (${mimeFilter})`
-
-  const params = new URLSearchParams({
-    q: query,
-    fields: 'files(id,name,mimeType,size,modifiedTime,createdTime,webViewLink)',
-    orderBy: 'modifiedTime desc',
-    pageSize: '100',
-    supportsAllDrives: 'true',
-    includeItemsFromAllDrives: 'true'
-  })
-
-  const response = await driveRequest(`/files?${params}`, token)
-  const data = await response.json()
-  return data.files || []
-}
-
 export async function downloadFileContent(fileId: string, mimeType: string, token: string): Promise<string> {
   // Google Docs need to be exported as plain text
   if (mimeType === 'application/vnd.google-apps.document') {
@@ -208,27 +243,4 @@ export async function downloadFileContent(fileId: string, mimeType: string, toke
     token
   )
   return response.text()
-}
-
-// ==========================================
-// Utility: extract folder ID from URL
-// ==========================================
-
-export function extractFolderIdFromUrl(input: string): string {
-  const trimmed = input.trim()
-
-  // Already a plain ID (no slashes, no URLs)
-  if (/^[a-zA-Z0-9_-]+$/.test(trimmed) && !trimmed.includes('/')) {
-    return trimmed
-  }
-
-  // Google Drive folder URL patterns:
-  // https://drive.google.com/drive/folders/FOLDER_ID
-  // https://drive.google.com/drive/u/0/folders/FOLDER_ID
-  // https://drive.google.com/drive/folders/FOLDER_ID?...
-  const match = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/)
-  if (match) return match[1]
-
-  // If nothing matched, treat the whole thing as an ID
-  return trimmed
 }

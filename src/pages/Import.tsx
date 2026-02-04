@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Upload,
@@ -13,16 +13,13 @@ import {
   ArrowRight,
   FileUp,
   Eye,
-  RefreshCw,
-  FolderOpen,
-  Link,
   Cloud,
   CloudOff,
-  Clock,
+  Shield,
+  FolderOpen,
   Zap
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -55,14 +52,14 @@ import type { Client } from '@/types'
 // ==========================================
 
 export default function ImportPage() {
-  const { user, profile } = useAuthStore()
+  const { user } = useAuthStore()
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Importar Dados</h1>
         <p className="text-muted-foreground mt-1">
-          Conecte seu Google Drive para sincronizar transcrições automaticamente
+          Conecte seu Google Drive ou importe manualmente
         </p>
       </div>
 
@@ -83,7 +80,7 @@ export default function ImportPage() {
         </TabsList>
 
         <TabsContent value="drive">
-          <GoogleDriveSync userId={user?.id} userName={profile?.name} />
+          <GoogleDriveIntegration userId={user?.id} />
         </TabsContent>
 
         <TabsContent value="transcription">
@@ -99,143 +96,53 @@ export default function ImportPage() {
 }
 
 // ==========================================
-// GOOGLE DRIVE SYNC (per-closer)
+// GOOGLE DRIVE INTEGRATION (wizard style)
 // ==========================================
 
-interface SyncedFile {
+type DriveStep = 'inicio' | 'permissoes' | 'conectado'
+
+interface ImportedFile {
   id: string
-  closer_id: string
-  drive_file_id: string
-  file_name: string
-  mime_type: string | null
+  name: string
+  mimeType: string
   status: 'pending' | 'processing' | 'completed' | 'error'
-  result_type: string | null
-  result_data: Record<string, unknown> | null
-  error_message: string | null
-  synced_at: string
-  processed_at: string | null
+  result?: Record<string, unknown>
+  error?: string
+  importedAt: string
 }
 
-interface SyncConfig {
-  id: string
-  closer_id: string
-  folder_id: string
-  folder_name: string | null
-  last_sync_at: string | null
-  auto_sync: boolean
-}
-
-const SYNC_INTERVAL_MS = 2 * 60 * 1000 // 2 minutes
-
-function getLocalConfigKey(userId: string) {
-  return `bethel-drive-config-${userId}`
-}
-
-function getLocalFilesKey(userId: string) {
-  return `bethel-drive-files-${userId}`
-}
-
-function GoogleDriveSync({ userId, userName }: { userId?: string; userName?: string }) {
-  const [isConnected, setIsConnected] = useState(drive.hasValidToken())
-  const [folderUrlInput, setFolderUrlInput] = useState('')
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState('')
+function GoogleDriveIntegration({ userId }: { userId?: string }) {
+  const [step, setStep] = useState<DriveStep>(drive.hasValidToken() ? 'conectado' : 'inicio')
+  const [isImporting, setIsImporting] = useState(false)
+  const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() => {
+    if (!userId) return []
+    try {
+      const stored = localStorage.getItem(`bethel-drive-files-${userId}`)
+      return stored ? JSON.parse(stored) : []
+    } catch { return [] }
+  })
   const [showAnalysisDialog, setShowAnalysisDialog] = useState(false)
   const [selectedAnalysis, setSelectedAnalysis] = useState<Record<string, unknown> | null>(null)
-  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Load config from Supabase (with fallback to localStorage per-user)
-  const { data: syncConfig, refetch: refetchConfig } = useQuery({
-    queryKey: ['drive-sync-config', userId],
-    queryFn: async (): Promise<SyncConfig | null> => {
-      if (!userId) return null
+  const stepIndex = step === 'inicio' ? 0 : step === 'permissoes' ? 1 : 2
 
-      // Try Supabase first
-      try {
-        const { data, error } = await supabase
-          .from('drive_sync_config')
-          .select('*')
-          .eq('closer_id', userId)
-          .maybeSingle()
-
-        if (!error && data) return data as SyncConfig
-      } catch {
-        // Table may not exist yet
-      }
-
-      // Fallback to per-user localStorage
-      const local = localStorage.getItem(getLocalConfigKey(userId))
-      if (local) {
-        try {
-          return JSON.parse(local) as SyncConfig
-        } catch { /* ignore */ }
-      }
-      return null
-    },
-    enabled: !!userId,
-    retry: false
-  })
-
-  // Load synced files (Supabase with localStorage fallback, per-user)
-  const { data: syncedFiles = [], refetch: refetchFiles } = useQuery({
-    queryKey: ['drive-sync-files', userId],
-    queryFn: async (): Promise<SyncedFile[]> => {
-      if (!userId) return []
-
-      try {
-        const { data, error } = await supabase
-          .from('drive_sync_files')
-          .select('*')
-          .eq('closer_id', userId)
-          .order('synced_at', { ascending: false })
-          .limit(50)
-
-        if (!error && data) return data as SyncedFile[]
-      } catch {
-        // Table may not exist
-      }
-
-      // Fallback to localStorage
-      const local = localStorage.getItem(getLocalFilesKey(userId))
-      if (local) {
-        try {
-          return JSON.parse(local) as SyncedFile[]
-        } catch { /* ignore */ }
-      }
-      return []
-    },
-    enabled: !!userId,
-    retry: false
-  })
-
-  // Auto-sync effect: triggers on mount + every SYNC_INTERVAL_MS
-  useEffect(() => {
-    if (!isConnected || !syncConfig?.folder_id || !syncConfig.auto_sync || !userId) return
-
-    // Sync on mount (small delay to let UI settle)
-    const initialSync = setTimeout(() => {
-      handleSync()
-    }, 1500)
-
-    // Periodic sync
-    syncIntervalRef.current = setInterval(() => {
-      handleSync()
-    }, SYNC_INTERVAL_MS)
-
-    return () => {
-      clearTimeout(initialSync)
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
+  // Save files to localStorage when they change
+  const saveFiles = (files: ImportedFile[]) => {
+    setImportedFiles(files)
+    if (userId) {
+      localStorage.setItem(`bethel-drive-files-${userId}`, JSON.stringify(files.slice(0, 100)))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, syncConfig?.folder_id, syncConfig?.auto_sync, userId])
+  }
 
-  // Connect Google Account (per-closer, each user authenticates with their own Google account)
-  const handleConnect = async () => {
+  // Step 1 → 2: Start connection
+  const handleStartConnection = async () => {
+    setStep('permissoes')
     try {
       await drive.authorize()
-      setIsConnected(true)
-      toast.success('Conta Google conectada!')
+      setStep('conectado')
+      toast.success('Google Drive conectado com sucesso!')
     } catch (error) {
+      setStep('inicio')
       toast.error(error instanceof Error ? error.message : 'Erro ao conectar')
     }
   }
@@ -243,268 +150,139 @@ function GoogleDriveSync({ userId, userName }: { userId?: string; userName?: str
   // Disconnect
   const handleDisconnect = () => {
     drive.clearToken()
-    setIsConnected(false)
-    toast.success('Conta Google desconectada')
+    setStep('inicio')
+    toast.success('Google Drive desconectado')
   }
 
-  // Save folder config (per-closer)
-  const handleSaveFolder = async () => {
-    if (!folderUrlInput.trim() || !userId) return
-
-    const folderId = drive.extractFolderIdFromUrl(folderUrlInput)
-    if (!folderId) {
-      toast.error('URL ou ID da pasta inválido')
-      return
-    }
-
+  // Open picker and import selected files
+  const handleImportFiles = async () => {
+    setIsImporting(true)
     try {
-      const token = await drive.authorize()
-      const folderInfo = await drive.getFolderInfo(folderId, token)
-
-      const config: SyncConfig = {
-        id: syncConfig?.id || crypto.randomUUID(),
-        closer_id: userId,
-        folder_id: folderId,
-        folder_name: folderInfo.name,
-        last_sync_at: null,
-        auto_sync: true
-      }
-
-      // Try saving to Supabase (per-closer unique constraint)
-      try {
-        await supabase
-          .from('drive_sync_config')
-          .upsert({
-            closer_id: userId,
-            folder_id: folderId,
-            folder_name: folderInfo.name,
-            auto_sync: true
-          }, { onConflict: 'closer_id' })
-      } catch {
-        // Table may not exist, use localStorage
-      }
-
-      // Always save to per-user localStorage as fallback
-      localStorage.setItem(getLocalConfigKey(userId), JSON.stringify(config))
-
-      setFolderUrlInput('')
-      refetchConfig()
-      toast.success(`Pasta "${folderInfo.name}" configurada para sua conta!`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Erro ao acessar pasta')
-    }
-  }
-
-  // Remove folder config
-  const handleRemoveFolder = () => {
-    if (!userId) return
-    const updatedConfig = { ...syncConfig, folder_id: '', folder_name: null, last_sync_at: null }
-    localStorage.setItem(getLocalConfigKey(userId), JSON.stringify(updatedConfig))
-
-    try {
-      supabase
-        .from('drive_sync_config')
-        .update({ folder_id: '', folder_name: null, last_sync_at: null })
-        .eq('closer_id', userId)
-        .then(() => {})
-    } catch { /* ignore */ }
-
-    refetchConfig()
-  }
-
-  // Main sync function (processes only this closer's configured folder)
-  const handleSync = async () => {
-    if (!userId || !syncConfig?.folder_id || isSyncing) return
-
-    setIsSyncing(true)
-    setSyncMessage('Verificando novos arquivos...')
-
-    try {
-      const token = await drive.authorize()
-      setIsConnected(true)
-
-      // List files modified since last sync in this closer's folder
-      const files = await drive.listFilesInFolder(
-        syncConfig.folder_id,
-        token,
-        syncConfig.last_sync_at || undefined
-      )
-
-      if (files.length === 0) {
-        setSyncMessage('Nenhum arquivo novo encontrado')
-        setIsSyncing(false)
+      const selectedFiles = await drive.openPicker()
+      if (selectedFiles.length === 0) {
+        setIsImporting(false)
         return
       }
 
-      // Filter out already synced files for this closer
-      const syncedIds = new Set(syncedFiles.map(f => f.drive_file_id))
-      const newFiles = files.filter(f => !syncedIds.has(f.id))
+      toast.info(`Processando ${selectedFiles.length} arquivo(s)...`)
 
-      if (newFiles.length === 0) {
-        setSyncMessage('Todos os arquivos já foram sincronizados')
-        setIsSyncing(false)
-        return
-      }
+      const token = await drive.authorize()
+      const newFiles: ImportedFile[] = []
 
-      setSyncMessage(`Processando ${newFiles.length} arquivo(s)...`)
-      let processed = 0
-      let errors = 0
-      const newSyncedFiles: SyncedFile[] = []
+      for (const file of selectedFiles) {
+        const importedFile: ImportedFile = {
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType,
+          status: 'processing',
+          importedAt: new Date().toISOString()
+        }
 
-      for (const file of newFiles) {
         try {
-          setSyncMessage(`Processando ${processed + 1}/${newFiles.length}: ${file.name}`)
-
-          // Download file content
+          // Download content
           const content = await drive.downloadFileContent(file.id, file.mimeType, token)
 
           if (!content.trim()) {
-            processed++
+            importedFile.status = 'error'
+            importedFile.error = 'Arquivo vazio'
+            newFiles.push(importedFile)
             continue
           }
 
-          // Determine file type and process
           const isCSV = file.name.endsWith('.csv') || file.mimeType === 'text/csv'
 
-          let resultType = 'transcription'
-          let resultData: Record<string, unknown> = {}
-          let status: 'completed' | 'error' = 'completed'
-          let errorMessage: string | null = null
-
           if (isCSV) {
-            resultType = 'csv_detected'
-            resultData = { row_count: content.split('\n').filter(l => l.trim()).length - 1 }
+            importedFile.status = 'completed'
+            importedFile.result = {
+              type: 'csv',
+              row_count: content.split('\n').filter(l => l.trim()).length - 1
+            }
           } else {
-            // Text file → AI transcription analysis
+            // Analyze with AI
             try {
               const analysis = await analyzeCallTranscript(content)
-              resultData = analysis as unknown as Record<string, unknown>
-              resultType = 'transcription'
+              importedFile.status = 'completed'
+              importedFile.result = analysis as unknown as Record<string, unknown>
             } catch (err) {
-              status = 'error'
-              errorMessage = err instanceof Error ? err.message : 'Erro na análise IA'
+              importedFile.status = 'error'
+              importedFile.error = err instanceof Error ? err.message : 'Erro na análise IA'
             }
           }
 
-          const syncedFile: SyncedFile = {
-            id: crypto.randomUUID(),
-            closer_id: userId,
-            drive_file_id: file.id,
-            file_name: file.name,
-            mime_type: file.mimeType,
-            status,
-            result_type: resultType,
-            result_data: resultData,
-            error_message: errorMessage,
-            synced_at: new Date().toISOString(),
-            processed_at: status === 'completed' ? new Date().toISOString() : null
+          // Try to save to Supabase
+          if (userId && importedFile.status === 'completed' && importedFile.result && !('type' in importedFile.result && importedFile.result.type === 'csv')) {
+            try {
+              await supabase.from('drive_sync_files').upsert({
+                closer_id: userId,
+                drive_file_id: file.id,
+                file_name: file.name,
+                mime_type: file.mimeType,
+                status: importedFile.status,
+                result_type: 'transcription',
+                result_data: importedFile.result,
+                synced_at: importedFile.importedAt,
+                processed_at: new Date().toISOString()
+              }, { onConflict: 'closer_id,drive_file_id' })
+            } catch { /* table may not exist */ }
           }
-
-          // Try saving to Supabase
-          try {
-            await supabase.from('drive_sync_files').upsert({
-              closer_id: userId,
-              drive_file_id: file.id,
-              file_name: file.name,
-              mime_type: file.mimeType,
-              status,
-              result_type: resultType,
-              result_data: resultData,
-              error_message: errorMessage,
-              synced_at: syncedFile.synced_at,
-              processed_at: syncedFile.processed_at
-            }, { onConflict: 'closer_id,drive_file_id' })
-          } catch {
-            // Table may not exist, store locally
-          }
-
-          newSyncedFiles.push(syncedFile)
-          processed++
         } catch (err) {
-          errors++
-          console.error(`Error processing ${file.name}:`, err)
+          importedFile.status = 'error'
+          importedFile.error = err instanceof Error ? err.message : 'Erro ao processar'
         }
+
+        newFiles.push(importedFile)
       }
 
-      // Save to localStorage as fallback
-      const allFiles = [...newSyncedFiles, ...syncedFiles].slice(0, 100)
-      localStorage.setItem(getLocalFilesKey(userId), JSON.stringify(allFiles))
+      // Merge with existing files (avoid duplicates)
+      const existingIds = new Set(importedFiles.map(f => f.id))
+      const merged = [...newFiles.filter(f => !existingIds.has(f.id)), ...importedFiles]
+      saveFiles(merged)
 
-      // Update last sync time
-      const now = new Date().toISOString()
-      try {
-        await supabase
-          .from('drive_sync_config')
-          .update({ last_sync_at: now })
-          .eq('closer_id', userId)
-      } catch { /* fallback below */ }
+      const successCount = newFiles.filter(f => f.status === 'completed').length
+      const errorCount = newFiles.filter(f => f.status === 'error').length
 
-      const updatedConfig = { ...syncConfig, last_sync_at: now }
-      localStorage.setItem(getLocalConfigKey(userId), JSON.stringify(updatedConfig))
-
-      refetchConfig()
-      refetchFiles()
-
-      if (errors === 0) {
-        setSyncMessage(`${processed} arquivo(s) processado(s) com sucesso`)
-        if (processed > 0) toast.success(`${processed} arquivo(s) sincronizado(s)!`)
-      } else {
-        setSyncMessage(`${processed} processado(s), ${errors} erro(s)`)
-        toast.warning(`${processed} processado(s), ${errors} erro(s)`)
-      }
+      if (successCount > 0) toast.success(`${successCount} arquivo(s) importado(s) com sucesso!`)
+      if (errorCount > 0) toast.warning(`${errorCount} arquivo(s) com erro`)
     } catch (error) {
       if (error instanceof Error && error.message.includes('Token expirado')) {
-        setIsConnected(false)
+        setStep('inicio')
       }
-      setSyncMessage('Erro na sincronização')
-      toast.error(error instanceof Error ? error.message : 'Erro na sincronização')
+      toast.error(error instanceof Error ? error.message : 'Erro ao importar')
     } finally {
-      setIsSyncing(false)
+      setIsImporting(false)
     }
   }
 
-  // View analysis result
-  const handleViewAnalysis = (file: SyncedFile) => {
-    if (file.result_data) {
-      setSelectedAnalysis(file.result_data)
-      setShowAnalysisDialog(true)
-    }
-  }
-
-  // Not configured - show setup instructions
+  // Not configured
   if (!drive.isConfigured()) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CloudOff className="h-5 w-5" />
-            Google Drive não configurado
-          </CardTitle>
-          <CardDescription>
-            Configure as credenciais do Google para ativar a sincronização automática
-          </CardDescription>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
+              <CloudOff className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <CardTitle>Google Drive não configurado</CardTitle>
+              <CardDescription>Configure as credenciais do Google no .env</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <div className="bg-muted rounded-lg p-4 space-y-3 text-sm">
             <p className="font-medium text-foreground">Para configurar:</p>
             <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-              <li>Acesse o <strong>Google Cloud Console</strong> e crie um projeto</li>
-              <li>Ative a <strong>Google Drive API</strong></li>
-              <li>Crie credenciais <strong>OAuth 2.0 Client ID</strong> (tipo: Web application)</li>
-              <li>Adicione a URL do seu app em <strong>Authorized JavaScript origins</strong></li>
-              <li>Crie uma <strong>API Key</strong> e restrinja para Google Drive API</li>
+              <li>Acesse o <strong>Google Cloud Console</strong></li>
+              <li>Ative a <strong>Google Drive API</strong> e <strong>Google Picker API</strong></li>
+              <li>Crie credenciais <strong>OAuth 2.0 Client ID</strong> e <strong>API Key</strong></li>
               <li>
-                Adicione no arquivo <code className="bg-card px-1 py-0.5 rounded">.env</code>:
+                Adicione no <code className="bg-card px-1 py-0.5 rounded">.env</code>:
                 <pre className="bg-card rounded p-2 mt-1 text-xs">
-{`VITE_GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
+{`VITE_GOOGLE_CLIENT_ID=seu-client-id
 VITE_GOOGLE_API_KEY=sua-api-key`}
                 </pre>
               </li>
-              <li>Reinicie o servidor de desenvolvimento</li>
             </ol>
-            <p className="text-xs text-muted-foreground mt-3">
-              Cada closer conecta sua própria conta Google. Somente os arquivos da pasta configurada por ele serão importados.
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -513,238 +291,225 @@ VITE_GOOGLE_API_KEY=sua-api-key`}
 
   return (
     <div className="space-y-6">
-      {/* Connection & Folder Config */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-4">
-          {/* Connection Status Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cloud className="h-5 w-5" />
-                Meu Google Drive
-              </CardTitle>
-              <CardDescription>
-                {userName
-                  ? `Conecte sua conta Google pessoal, ${userName}. Apenas seus arquivos serão importados.`
-                  : 'Conecte sua conta Google pessoal. Apenas seus arquivos serão importados.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Auth status */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {isConnected ? (
-                    <>
-                      <div className="h-2.5 w-2.5 rounded-full bg-green-500 dark:bg-green-400" />
-                      <span className="text-sm font-medium text-foreground">Conectado</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground" />
-                      <span className="text-sm font-medium text-muted-foreground">Desconectado</span>
-                    </>
-                  )}
-                </div>
-                {isConnected ? (
-                  <Button variant="outline" size="sm" onClick={handleDisconnect}>
-                    Desconectar
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={handleConnect}>
-                    <Cloud className="h-4 w-4 mr-2" />
-                    Conectar minha conta Google
-                  </Button>
+      {/* Main Card */}
+      <Card className="overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
+              <Cloud className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Integração Google Drive</h3>
+              <p className="text-sm text-muted-foreground">Conecte sua conta para importar transcrições automaticamente</p>
+            </div>
+          </div>
+        </div>
+
+        <CardContent className="p-6">
+          {/* Stepper */}
+          <div className="flex items-center justify-center gap-0 mb-8">
+            {[
+              { label: 'Início', index: 0 },
+              { label: 'Permissões', index: 1 },
+              { label: 'Conectar', index: 2 }
+            ].map((s, i) => (
+              <div key={s.label} className="flex items-center">
+                {i > 0 && (
+                  <div className={`w-16 sm:w-24 h-px ${stepIndex > i - 1 ? 'bg-blue-600' : 'bg-border'}`} />
                 )}
+                <div className="flex items-center gap-2">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+                    stepIndex >= s.index
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {stepIndex > s.index ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      s.index + 1
+                    )}
+                  </div>
+                  <span className={`text-sm font-medium hidden sm:inline ${
+                    stepIndex >= s.index ? 'text-foreground' : 'text-muted-foreground'
+                  }`}>
+                    {s.label}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Step Content */}
+          {step === 'inicio' && (
+            <div className="text-center space-y-8">
+              <div>
+                <h2 className="text-xl font-bold text-foreground mb-2">
+                  Comece a importar suas transcrições
+                </h2>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  Conecte seu Google Drive para importar os documentos de transcrição das suas calls.
+                </p>
               </div>
 
-              {/* Folder config (only shown when connected) */}
-              {isConnected && (
-                <div className="space-y-3 pt-2 border-t border-border">
-                  {syncConfig?.folder_id ? (
-                    <div className="flex items-center justify-between bg-muted rounded-lg p-3">
-                      <div className="flex items-center gap-2">
-                        <FolderOpen className="h-5 w-5 text-primary" />
-                        <div>
-                          <p className="text-sm font-medium text-foreground">
-                            {syncConfig.folder_name || syncConfig.folder_id}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {syncConfig.last_sync_at
-                              ? `Última sync: ${new Date(syncConfig.last_sync_at).toLocaleString('pt-BR')}`
-                              : 'Nunca sincronizado'}
-                          </p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={handleRemoveFolder}>
-                        Alterar pasta
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label>URL ou ID da sua pasta no Google Drive</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="https://drive.google.com/drive/folders/... ou ID"
-                          value={folderUrlInput}
-                          onChange={(e) => setFolderUrlInput(e.target.value)}
-                          className="bg-card"
-                        />
-                        <Button onClick={handleSaveFolder} disabled={!folderUrlInput.trim()}>
-                          <Link className="h-4 w-4 mr-2" />
-                          Conectar
-                        </Button>
-                      </div>
+              {/* Feature cards */}
+              <div className="space-y-3 max-w-lg mx-auto text-left">
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
+                  <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Importação Automática</p>
+                    <p className="text-sm text-muted-foreground">Detectamos novos documentos e importamos automaticamente</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
+                  <div className="h-10 w-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                    <FolderOpen className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Acesso Somente Leitura</p>
+                    <p className="text-sm text-muted-foreground">Nunca modificamos ou deletamos seus arquivos</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
+                  <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+                    <Shield className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">100% Seguro</p>
+                    <p className="text-sm text-muted-foreground">Você pode revogar o acesso a qualquer momento</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* CTA */}
+              <Button
+                size="lg"
+                className="w-full max-w-lg h-12 bg-blue-600 hover:bg-blue-700 text-base font-semibold"
+                onClick={handleStartConnection}
+              >
+                Começar Conexão
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </div>
+          )}
+
+          {step === 'permissoes' && (
+            <div className="text-center space-y-6 py-8">
+              <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
+              <div>
+                <h2 className="text-xl font-bold text-foreground mb-2">
+                  Conectando ao Google Drive...
+                </h2>
+                <p className="text-muted-foreground">
+                  Autorize o acesso na janela do Google que abriu.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {step === 'conectado' && (
+            <div className="space-y-6">
+              {/* Connected status */}
+              <div className="flex items-center justify-between p-4 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Google Drive Conectado</p>
+                    <p className="text-sm text-muted-foreground">Pronto para importar seus arquivos</p>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleDisconnect} className="text-muted-foreground hover:text-foreground">
+                  Desconectar
+                </Button>
+              </div>
+
+              {/* Import button */}
+              <Button
+                size="lg"
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-base font-semibold"
+                onClick={handleImportFiles}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Importando...
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="mr-2 h-5 w-5" />
+                    Selecionar Arquivos do Drive
+                  </>
+                )}
+              </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                Selecione transcrições (.txt, .md, Google Docs) ou planilhas (.csv) do seu Drive
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Imported files history */}
+      {importedFiles.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Arquivos Importados
+            </CardTitle>
+            <CardDescription>
+              {importedFiles.length} arquivo(s) importado(s) do Google Drive
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {importedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {file.name}
+                      </p>
                       <p className="text-xs text-muted-foreground">
-                        Cole o link da pasta no seu Drive onde ficam suas transcrições de calls
+                        {new Date(file.importedAt).toLocaleString('pt-BR')}
+                        {file.result && 'type' in file.result && file.result.type === 'csv' && ' · CSV detectado'}
+                        {file.result && !('type' in file.result) && ' · Transcrição analisada'}
                       </p>
                     </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Sync Controls */}
-          {isConnected && syncConfig?.folder_id && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Zap className="h-4 w-4" />
-                  Sincronização Automática
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {isSyncing && (
-                    <Badge variant="secondary" className="flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Sincronizando
-                    </Badge>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSync}
-                    disabled={isSyncing}
-                  >
-                    <RefreshCw className={`h-4 w-4 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
-                    Sincronizar agora
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {syncMessage && (
-                  <p className="text-sm text-muted-foreground mb-3">{syncMessage}</p>
-                )}
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    Verifica a cada 2 minutos enquanto a página está aberta
                   </div>
-                  <div className="flex items-center gap-1">
-                    <FileText className="h-3.5 w-3.5" />
-                    {syncedFiles.length} arquivo(s) sincronizado(s)
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <FileStatusBadge status={file.status} />
+                    {file.status === 'completed' && file.result && !('type' in file.result && file.result.type === 'csv') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedAnalysis(file.result!)
+                          setShowAnalysisDialog(true)
+                        }}
+                        title="Ver análise"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Synced Files List */}
-          {syncedFiles.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Meus Arquivos Sincronizados</CardTitle>
-                <CardDescription>
-                  Histórico dos seus arquivos importados do Google Drive
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {syncedFiles.map((file) => (
-                    <div
-                      key={file.id || file.drive_file_id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {file.file_name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(file.synced_at).toLocaleString('pt-BR')}
-                            {file.result_type === 'transcription' && ' • Transcrição analisada'}
-                            {file.result_type === 'csv_detected' && ' • CSV detectado'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <SyncStatusBadge status={file.status} />
-                        {file.status === 'completed' && file.result_type === 'transcription' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewAnalysis(file)}
-                            title="Ver análise"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        {/* Right sidebar: Info */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Como funciona</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <Badge variant="outline" className="mt-0.5 flex-shrink-0">1</Badge>
-                <p>Conecte <strong>sua conta Google</strong> pessoal</p>
-              </div>
-              <div className="flex items-start gap-2">
-                <Badge variant="outline" className="mt-0.5 flex-shrink-0">2</Badge>
-                <p>Selecione a pasta do Drive onde ficam suas transcrições</p>
-              </div>
-              <div className="flex items-start gap-2">
-                <Badge variant="outline" className="mt-0.5 flex-shrink-0">3</Badge>
-                <p>O sistema verifica automaticamente por novos arquivos a cada 2 minutos</p>
-              </div>
-              <div className="flex items-start gap-2">
-                <Badge variant="outline" className="mt-0.5 flex-shrink-0">4</Badge>
-                <p>Novas transcrições são analisadas automaticamente pela IA</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Importante</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Privacidade:</strong>{' '}
-                Cada closer conecta sua própria conta Google. Somente os arquivos da sua pasta configurada serão importados.
-              </p>
-              <p>
-                <strong className="text-foreground">Arquivos aceitos:</strong>{' '}
-                .txt, .md, Google Docs (análise IA), .csv (detecção)
-              </p>
-              <p>
-                <strong className="text-foreground">Automático:</strong>{' '}
-                Basta salvar o arquivo na pasta do Drive. Na próxima verificação ele será processado.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Analysis Dialog */}
       <AnalysisResultDialog
@@ -756,13 +521,13 @@ VITE_GOOGLE_API_KEY=sua-api-key`}
   )
 }
 
-function SyncStatusBadge({ status }: { status: string }) {
+function FileStatusBadge({ status }: { status: string }) {
   switch (status) {
     case 'completed':
       return (
         <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
           <CheckCircle2 className="h-3 w-3 mr-1" />
-          Processado
+          Importado
         </Badge>
       )
     case 'processing':
@@ -781,16 +546,13 @@ function SyncStatusBadge({ status }: { status: string }) {
       )
     default:
       return (
-        <Badge variant="outline">
-          <Clock className="h-3 w-3 mr-1" />
-          Pendente
-        </Badge>
+        <Badge variant="outline">Pendente</Badge>
       )
   }
 }
 
 // ==========================================
-// ANALYSIS RESULT DIALOG (shared)
+// ANALYSIS RESULT DIALOG
 // ==========================================
 
 function AnalysisResultDialog({
@@ -907,7 +669,7 @@ function AnalysisList({ title, items, icon }: { title: string; items: string[]; 
 }
 
 // ==========================================
-// TRANSCRIPTION IMPORT (Manual fallback)
+// TRANSCRIPTION IMPORT (Manual)
 // ==========================================
 
 function TranscriptionImport({ userId }: { userId?: string }) {
