@@ -908,7 +908,7 @@ function CsvImport({ userId }: { userId?: string }) {
   const [step, setStep] = useState<CsvStep>('upload')
   const [csvData, setCsvData] = useState<CsvData | null>(null)
   const [columnMapping, setColumnMapping] = useState<Record<number, ClientField>>({})
-  const [importResults, setImportResults] = useState<{ success: number; errors: string[] }>({ success: 0, errors: [] })
+  const [importResults, setImportResults] = useState<{ success: number; errors: string[]; skipped?: number }>({ success: 0, errors: [] })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const parseCsv = useCallback((text: string): CsvData => {
@@ -1022,7 +1022,16 @@ function CsvImport({ userId }: { userId?: string }) {
 
       setStep('importing')
       let success = 0
+      let skipped = 0
       const errors: string[] = []
+
+      // Fetch existing clients for dedup (by email and phone)
+      const { data: existingClients } = await supabase
+        .from('clients')
+        .select('email, phone')
+        .eq('closer_id', userId)
+      const existingEmails = new Set((existingClients || []).map(c => c.email?.toLowerCase()).filter(Boolean))
+      const existingPhones = new Set((existingClients || []).map(c => c.phone?.replace(/\D/g, '')).filter(Boolean))
 
       for (let i = 0; i < csvData.rows.length; i++) {
         const row = csvData.rows[i]
@@ -1059,26 +1068,44 @@ function CsvImport({ userId }: { userId?: string }) {
           if (!record.status) record.status = 'lead'
           if (!record.source) record.source = 'other'
 
+          // Check for duplicates by email or phone
+          const email = (record.email as string).toLowerCase()
+          const phone = (record.phone as string).replace(/\D/g, '')
+          if (email && existingEmails.has(email)) {
+            skipped++
+            errors.push(`Linha ${i + 2} (${record.name}): Email "${email}" já existe, pulando`)
+            continue
+          }
+          if (phone && phone.length >= 8 && existingPhones.has(phone)) {
+            skipped++
+            errors.push(`Linha ${i + 2} (${record.name}): Telefone já existe, pulando`)
+            continue
+          }
+
           const { error } = await supabase.from('clients').insert(record)
 
           if (error) {
             errors.push(`Linha ${i + 2} (${record.name}): ${error.message}`)
           } else {
             success++
+            // Add to sets to prevent duplicates within the same CSV
+            if (email) existingEmails.add(email)
+            if (phone && phone.length >= 8) existingPhones.add(phone)
           }
         } catch (err) {
           errors.push(`Linha ${i + 2}: ${err instanceof Error ? err.message : 'Erro desconhecido'}`)
         }
       }
 
-      return { success, errors }
+      return { success, errors, skipped }
     },
     onSuccess: (results) => {
       if (results) {
         setImportResults(results)
         setStep('done')
         if (results.success > 0) toast.success(`${results.success} clientes importados!`)
-        if (results.errors.length > 0) toast.warning(`${results.errors.length} erros durante importação`)
+        if (results.skipped && results.skipped > 0) toast.info(`${results.skipped} duplicados ignorados`)
+        if (results.errors.length > 0 && (!results.skipped || results.errors.length > results.skipped)) toast.warning(`${results.errors.length} erros durante importação`)
       }
     },
     onError: (error: Error) => {
@@ -1268,13 +1295,17 @@ function CsvImport({ userId }: { userId?: string }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="bg-green-50 dark:bg-green-950/20 rounded-lg p-4 text-center">
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">{importResults.success}</p>
                 <p className="text-sm text-green-600 dark:text-green-400">Importados</p>
               </div>
+              <div className="bg-yellow-50 dark:bg-yellow-950/20 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{importResults.skipped || 0}</p>
+                <p className="text-sm text-yellow-600 dark:text-yellow-400">Duplicados</p>
+              </div>
               <div className="bg-red-50 dark:bg-red-950/20 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{importResults.errors.length}</p>
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{importResults.errors.length - (importResults.skipped || 0)}</p>
                 <p className="text-sm text-red-600 dark:text-red-400">Erros</p>
               </div>
             </div>
