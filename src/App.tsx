@@ -17,6 +17,8 @@ import NotificationsPage from '@/pages/Notifications'
 import ReportsPage from '@/pages/Reports'
 import TeamPage from '@/pages/Team'
 import AdminPage from '@/pages/Admin'
+import CrmCallsPage from '@/pages/CrmCalls'
+import CrmIntensivoPage from '@/pages/CrmIntensivo'
 import NotFoundPage from '@/pages/NotFound'
 
 // Layout
@@ -72,6 +74,8 @@ function App() {
               <Route path="clients" element={<ClientsPage />} />
               <Route path="clients/:id" element={<ClientDetailPage />} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="crm-calls" element={<CrmCallsPage />} />
+              <Route path="crm-intensivo" element={<CrmIntensivoPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="team" element={<TeamPage />} />

@@ -12,7 +12,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  Phone,
+  Flame
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -24,6 +26,9 @@ import logo from '@/components/ui/logo.png'
 // Navigation items
 const baseNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Calls', href: '/calls', icon: Phone },
+  { name: 'CRM Calls', href: '/crm-calls', icon: Users },
+  { name: 'CRM Intensivo', href: '/crm-intensivo', icon: Flame },
   { name: 'Carteira', href: '/clients', icon: Briefcase },
   { name: 'Notificações', href: '/notifications', icon: Bell },
   { name: 'Configurações', href: '/settings', icon: Settings }

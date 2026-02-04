@@ -123,6 +123,69 @@ export interface MonthlyGoal {
   updated_at: string
 }
 
+// CRM Calls Pipeline types
+export type CrmCallStage = 'call_realizada' | 'repitch' | 'pos_call_0_2' | 'pos_call_3_7'
+
+export interface CrmCallClient {
+  id: string
+  name: string
+  phone?: string
+  email?: string
+  company?: string
+  niche?: string
+  monthly_revenue?: number
+  has_partner: boolean
+  funnel_source?: string
+  sdr?: string
+  product_offered?: string
+  stage: CrmCallStage
+  call_date?: string
+  sale_value?: number
+  closer_id: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+// CRM Intensivo types
+export type IntensivoStage =
+  | 'abordagem_inicial'
+  | 'nivel_consciencia'
+  | 'convite_intensivo'
+  | 'aguardando_confirmacao'
+  | 'confirmados'
+  | 'retirado_ingresso'
+  | 'aquecimento_30d'
+  | 'aquecimento_7d'
+  | 'aquecimento_1d'
+  | 'compareceram'
+  | 'nao_compareceram'
+  | 'sem_interesse'
+
+export interface IntensivoEvent {
+  id: string
+  name: string
+  date: string
+  location: string
+  closer_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface IntensivoLead {
+  id: string
+  event_id: string
+  name: string
+  phone?: string
+  email?: string
+  company?: string
+  stage: IntensivoStage
+  closer_id: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
 // Tag types
 export interface Tag {
   id: string
