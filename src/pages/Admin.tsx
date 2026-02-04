@@ -62,8 +62,9 @@ const roleBadgeVariants = {
 } as const
 
 export default function AdminPage() {
-  const { profile } = useAuthStore()
+  const { user, profile } = useAuthStore()
   const queryClient = useQueryClient()
+  const role = profile?.role || user?.role
   const [editingUser, setEditingUser] = useState<string | null>(null)
   const [newRole, setNewRole] = useState<string>('')
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
@@ -303,7 +304,7 @@ export default function AdminPage() {
   })
 
   // Check if current user is admin
-  if (profile?.role !== 'admin') {
+  if (role !== 'admin') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <Shield className="h-16 w-16 text-muted-foreground/50 mb-4" />
