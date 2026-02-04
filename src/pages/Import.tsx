@@ -14,7 +14,6 @@ import {
   FileUp,
   Eye,
   Cloud,
-  CloudOff,
   Shield,
   FolderOpen,
   Zap
@@ -251,42 +250,6 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     } finally {
       setIsImporting(false)
     }
-  }
-
-  // Not configured
-  if (!drive.isConfigured()) {
-    return (
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-              <CloudOff className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div>
-              <CardTitle>Google Drive não configurado</CardTitle>
-              <CardDescription>Configure as credenciais do Google no .env</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-muted rounded-lg p-4 space-y-3 text-sm">
-            <p className="font-medium text-foreground">Para configurar:</p>
-            <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-              <li>Acesse o <strong>Google Cloud Console</strong></li>
-              <li>Ative a <strong>Google Drive API</strong> e <strong>Google Picker API</strong></li>
-              <li>Crie credenciais <strong>OAuth 2.0 Client ID</strong> e <strong>API Key</strong></li>
-              <li>
-                Adicione no <code className="bg-card px-1 py-0.5 rounded">.env</code>:
-                <pre className="bg-card rounded p-2 mt-1 text-xs">
-{`VITE_GOOGLE_CLIENT_ID=seu-client-id
-VITE_GOOGLE_API_KEY=sua-api-key`}
-                </pre>
-              </li>
-            </ol>
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
 
   return (
