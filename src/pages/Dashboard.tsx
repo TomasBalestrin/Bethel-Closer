@@ -13,7 +13,8 @@ import {
   GraduationCap,
   ShoppingCart,
   Monitor,
-  Flag
+  Flag,
+  Users
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -168,20 +169,71 @@ export default function DashboardPage() {
   const { user, profile } = useAuthStore()
   const dailyVerse = getDailyVerse(user?.id)
   const [funnelFilter, setFunnelFilter] = useState<string>('all')
+  const [closerFilter, setCloserFilter] = useState<string>('all')
   const dateRange = getMonthDateRange()
+
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'lider'
+
+  // Fetch closers list (admin/lider only)
+  const { data: closers = [] } = useQuery({
+    queryKey: ['dashboard-closers'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('user_id, name, email')
+        .order('name')
+      return data || []
+    },
+    enabled: isAdmin
+  })
 
   // Fetch dashboard stats
   const { data: stats } = useQuery({
-    queryKey: ['dashboard-stats', dateRange.start.toISOString()],
+    queryKey: ['dashboard-stats', dateRange.start.toISOString(), closerFilter, isAdmin],
     queryFn: async () => {
       const startOfMonth = dateRange.start.toISOString()
       const endOfMonth = dateRange.end.toISOString()
 
+      // Build queries with optional closer_id filter
+      let clientsQuery = supabase.from('clients').select('id, ticket_type, status, sale_value, entry_value, created_at, closer_id')
+      let callsQuery = supabase.from('calls').select('id, status, quality_score, client_id').gte('scheduled_at', startOfMonth).lte('scheduled_at', endOfMonth)
+      let salesQuery = supabase.from('clients').select('id, sale_value, entry_value, ticket_type, closer_id').eq('status', 'closed_won').gte('created_at', startOfMonth).lte('created_at', endOfMonth)
+      let allCallsQuery = supabase.from('calls').select('id, quality_score').eq('status', 'completed')
+
+      // If admin is filtering by specific closer, apply the filter
+      if (isAdmin && closerFilter !== 'all') {
+        clientsQuery = clientsQuery.eq('closer_id', closerFilter)
+        salesQuery = salesQuery.eq('closer_id', closerFilter)
+
+        // For calls, we need to get client_ids first then filter
+        const { data: closerClientIds } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('closer_id', closerFilter)
+        const ids = (closerClientIds || []).map(c => c.id)
+
+        if (ids.length > 0) {
+          callsQuery = callsQuery.in('client_id', ids)
+          allCallsQuery = allCallsQuery.in('client_id', ids)
+        } else {
+          // No clients for this closer
+          return {
+            totalCalls: 0,
+            totalSales: 0,
+            conversionRate: 0,
+            totalSaleValue: 0,
+            totalEntryValue: 0,
+            avgCallScore: null,
+            productStats: {} as Record<TicketType, { count: number; calls: number; callsPercent: number; sales: number; conversionRate: number }>
+          }
+        }
+      }
+
       const [clientsResult, callsResult, salesResult, allCallsResult] = await Promise.all([
-        supabase.from('clients').select('id, ticket_type, status, sale_value, entry_value, created_at'),
-        supabase.from('calls').select('id, status, quality_score, client_id').gte('scheduled_at', startOfMonth).lte('scheduled_at', endOfMonth),
-        supabase.from('clients').select('id, sale_value, entry_value, ticket_type').eq('status', 'closed_won').gte('created_at', startOfMonth).lte('created_at', endOfMonth),
-        supabase.from('calls').select('id, quality_score').eq('status', 'completed')
+        clientsQuery,
+        callsQuery,
+        salesQuery,
+        allCallsQuery
       ])
 
       const clients = clientsResult.data || []
@@ -289,10 +341,30 @@ export default function DashboardPage() {
             </Badge>
           </div>
           <p className="text-muted-foreground">
-            Confira seu desempenho e acompanhe suas metas
+            {isAdmin
+              ? closerFilter === 'all'
+                ? 'Visão geral do desempenho da equipe'
+                : `Desempenho de ${closers.find(c => c.user_id === closerFilter)?.name || 'closer'}`
+              : 'Confira seu desempenho e acompanhe suas metas'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {isAdmin && (
+            <Select value={closerFilter} onValueChange={setCloserFilter}>
+              <SelectTrigger className="w-[200px] bg-card">
+                <Users className="h-4 w-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Todos os Closers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Closers</SelectItem>
+                {closers.map((closer) => (
+                  <SelectItem key={closer.user_id} value={closer.user_id}>
+                    {closer.name || closer.email || 'Sem nome'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={funnelFilter} onValueChange={setFunnelFilter}>
             <SelectTrigger className="w-[180px] bg-card">
               <SelectValue placeholder="Todos os Funis" />
