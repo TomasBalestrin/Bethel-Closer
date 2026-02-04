@@ -20,6 +20,71 @@ interface AuthState {
 
 let authListenerSetup = false
 
+// Helper: fetch or create profile, ensuring email is always populated
+async function fetchOrCreateProfile(sessionUser: { id: string; email?: string; created_at: string }) {
+  let profile = null
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', sessionUser.id)
+      .maybeSingle()
+
+    if (!error && data) {
+      profile = data
+
+      // Auto-populate email if missing in profile
+      if (!profile.email && sessionUser.email) {
+        try {
+          await supabase
+            .from('profiles')
+            .update({ email: sessionUser.email })
+            .eq('user_id', sessionUser.id)
+          profile.email = sessionUser.email
+        } catch {
+          // ignore update error
+        }
+      }
+    } else if (!data) {
+      // Profile doesn't exist - create one
+      try {
+        const newProfile = {
+          user_id: sessionUser.id,
+          email: sessionUser.email || '',
+          name: sessionUser.email?.split('@')[0] || '',
+          role: 'closer'
+        }
+        const { data: created } = await supabase
+          .from('profiles')
+          .insert(newProfile)
+          .select()
+          .single()
+        profile = created || newProfile
+      } catch {
+        // Profile creation failed (might be RLS or trigger conflict)
+        console.warn('Could not create profile, using defaults')
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch profile:', e)
+  }
+
+  return profile
+}
+
+function buildUser(sessionUser: { id: string; email?: string; created_at: string }, profile: Record<string, unknown> | null): User {
+  return {
+    id: sessionUser.id,
+    email: sessionUser.email || '',
+    name: (profile?.name as string) || sessionUser.email?.split('@')[0] || '',
+    avatar_url: (profile?.avatar_url as string) || undefined,
+    role: ((profile?.role as UserRole) || 'closer'),
+    created_at: sessionUser.created_at,
+    updated_at: (profile?.updated_at as string) || sessionUser.created_at
+  }
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -53,28 +118,8 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (session?.user) {
-            // Try to get profile, but don't fail if it doesn't exist
-            let profile = null
-            try {
-              const { data } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .single()
-              profile = data
-            } catch (e) {
-              console.warn('Could not fetch profile:', e)
-            }
-
-            const user: User = {
-              id: session.user.id,
-              email: session.user.email || '',
-              name: profile?.name || session.user.email?.split('@')[0] || '',
-              avatar_url: profile?.avatar_url || undefined,
-              role: (profile?.role as UserRole) || 'closer',
-              created_at: session.user.created_at,
-              updated_at: profile?.updated_at || session.user.created_at
-            }
+            const profile = await fetchOrCreateProfile(session.user)
+            const user = buildUser(session.user, profile)
 
             set({
               user,
@@ -98,27 +143,8 @@ export const useAuthStore = create<AuthState>()(
             authListenerSetup = true
             supabase.auth.onAuthStateChange(async (event, session) => {
               if (event === 'SIGNED_IN' && session?.user) {
-                let profile = null
-                try {
-                  const { data } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('user_id', session.user.id)
-                    .single()
-                  profile = data
-                } catch (e) {
-                  console.warn('Could not fetch profile on auth change:', e)
-                }
-
-                const user: User = {
-                  id: session.user.id,
-                  email: session.user.email || '',
-                  name: profile?.name || session.user.email?.split('@')[0] || '',
-                  avatar_url: profile?.avatar_url || undefined,
-                  role: (profile?.role as UserRole) || 'closer',
-                  created_at: session.user.created_at,
-                  updated_at: profile?.updated_at || session.user.created_at
-                }
+                const profile = await fetchOrCreateProfile(session.user)
+                const user = buildUser(session.user, profile)
 
                 set({
                   user,
