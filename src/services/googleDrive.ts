@@ -1,8 +1,8 @@
 // Google Drive API Service
 // Uses Google Identity Services (GIS) for OAuth2 + Google Picker for file selection
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
-const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || ''
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '159448469952-1hhh51kvi98r4h030bfcqln544m0lndb.apps.googleusercontent.com'
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || 'AIzaSyDeqfOPxaGTE0BZxGR46YfipMsFcjddwTM'
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 
