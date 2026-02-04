@@ -120,12 +120,30 @@ export const bibleVerses = [
   { text: "Grandes coisas fez o Senhor por nós, e por isso estamos alegres.", reference: "Salmos 126:3", category: "Visão e Propósito" },
 ]
 
-// Função para pegar o versículo do dia baseado no dia do ano
-export const getDailyVerse = () => {
+// Função simples de hash para gerar um número a partir de uma string
+function simpleHash(str: string): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return Math.abs(hash)
+}
+
+// Função para pegar o versículo do dia - randomizado por usuário
+// Cada usuário recebe um versículo diferente a cada dia
+export const getDailyVerse = (userId?: string) => {
   const now = new Date()
   const start = new Date(now.getFullYear(), 0, 0)
   const diff = now.getTime() - start.getTime()
   const oneDay = 1000 * 60 * 60 * 24
   const dayOfYear = Math.floor(diff / oneDay)
-  return bibleVerses[dayOfYear % bibleVerses.length]
+
+  // Combina o dia com o userId para gerar um índice único por usuário/dia
+  const seed = userId
+    ? simpleHash(`${userId}-${dayOfYear}-${now.getFullYear()}`)
+    : dayOfYear
+
+  return bibleVerses[seed % bibleVerses.length]
 }

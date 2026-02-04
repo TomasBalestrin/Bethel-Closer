@@ -166,7 +166,7 @@ function ProductCard({ name, icon, iconBg, bgColor, count, callsPercent, sales, 
 
 export default function DashboardPage() {
   const { user, profile } = useAuthStore()
-  const dailyVerse = getDailyVerse()
+  const dailyVerse = getDailyVerse(user?.id)
   const [funnelFilter, setFunnelFilter] = useState<string>('all')
   const dateRange = getMonthDateRange()
 
