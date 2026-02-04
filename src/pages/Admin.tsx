@@ -182,20 +182,37 @@ export default function AdminPage() {
     queryKey: ['admin-goals'],
     queryFn: async () => {
       const now = new Date()
-      const { data } = await supabase
+
+      // Try with year column first, fallback to without
+      let result = await supabase
         .from('monthly_goals')
         .select('*')
         .eq('month', now.getMonth() + 1)
         .eq('year', now.getFullYear())
         .limit(1)
 
+      if (result.error) {
+        result = await supabase
+          .from('monthly_goals')
+          .select('*')
+          .eq('month', now.getMonth() + 1)
+          .limit(1)
+
+        if (result.error) {
+          console.warn('Monthly goals fetch error:', result.error.message)
+          return null
+        }
+      }
+
+      const data = result.data
       if (data?.[0]) {
         setGoalCalls(data[0].target_calls || 100)
         setGoalSales(data[0].target_sales || 20)
         setGoalRevenue(data[0].target_revenue || 100000)
       }
       return data?.[0] || null
-    }
+    },
+    retry: false
   })
 
   // Save monthly goals
@@ -215,6 +232,7 @@ export default function AdminPage() {
 
       // Upsert goals for all members
       for (const member of members) {
+        // Try with year column first
         const { error } = await supabase
           .from('monthly_goals')
           .upsert({
@@ -229,15 +247,29 @@ export default function AdminPage() {
           })
 
         if (error) {
-          // Try insert if upsert fails
-          await supabase.from('monthly_goals').insert({
-            closer_id: member.user_id,
-            month,
-            year,
-            target_calls: goalCalls,
-            target_sales: goalSales,
-            target_revenue: goalRevenue
-          })
+          // Try without year column (old schema)
+          const { error: error2 } = await supabase
+            .from('monthly_goals')
+            .upsert({
+              closer_id: member.user_id,
+              month,
+              target_calls: goalCalls,
+              target_sales: goalSales,
+              target_revenue: goalRevenue
+            }, {
+              onConflict: 'closer_id,month'
+            })
+
+          if (error2) {
+            // Last resort: plain insert without year
+            await supabase.from('monthly_goals').insert({
+              closer_id: member.user_id,
+              month,
+              target_calls: goalCalls,
+              target_sales: goalSales,
+              target_revenue: goalRevenue
+            })
+          }
         }
       }
     },

@@ -159,6 +159,7 @@ export default function TeamPage() {
       const month = now.getMonth() + 1
       const year = now.getFullYear()
 
+      // Try with year column first
       const { error } = await supabase
         .from('monthly_goals')
         .upsert({
@@ -173,15 +174,29 @@ export default function TeamPage() {
         })
 
       if (error) {
-        // Try insert if upsert fails
-        await supabase.from('monthly_goals').insert({
-          closer_id: selectedMember.user_id,
-          month,
-          year,
-          target_calls: memberGoalCalls,
-          target_sales: memberGoalSales,
-          target_revenue: memberGoalRevenue
-        })
+        // Try without year column (old schema)
+        const { error: error2 } = await supabase
+          .from('monthly_goals')
+          .upsert({
+            closer_id: selectedMember.user_id,
+            month,
+            target_calls: memberGoalCalls,
+            target_sales: memberGoalSales,
+            target_revenue: memberGoalRevenue
+          }, {
+            onConflict: 'closer_id,month'
+          })
+
+        if (error2) {
+          // Last resort: plain insert without year
+          await supabase.from('monthly_goals').insert({
+            closer_id: selectedMember.user_id,
+            month,
+            target_calls: memberGoalCalls,
+            target_sales: memberGoalSales,
+            target_revenue: memberGoalRevenue
+          })
+        }
       }
     },
     onSuccess: () => {
