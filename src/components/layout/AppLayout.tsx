@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Phone,
-  Flame
+  Flame,
+  FileUp
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,7 @@ const baseNavigation = [
   { name: 'CRM Calls', href: '/crm-calls', icon: Users },
   { name: 'CRM Intensivo', href: '/crm-intensivo', icon: Flame },
   { name: 'Carteira', href: '/clients', icon: Briefcase },
+  { name: 'Importar Dados', href: '/import', icon: FileUp },
   { name: 'Notificações', href: '/notifications', icon: Bell },
   { name: 'Configurações', href: '/settings', icon: Settings }
 ]

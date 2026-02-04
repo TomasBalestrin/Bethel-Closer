@@ -49,6 +49,7 @@ import TeamPage from '@/pages/Team'
 import AdminPage from '@/pages/Admin'
 import CrmCallsPage from '@/pages/CrmCalls'
 import CrmIntensivoPage from '@/pages/CrmIntensivo'
+import ImportPage from '@/pages/Import'
 import NotFoundPage from '@/pages/NotFound'
 
 // Layout
@@ -112,6 +113,7 @@ function App() {
               <Route path="team" element={<TeamPage />} />
               <Route path="admin" element={<AdminPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="import" element={<ImportPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
