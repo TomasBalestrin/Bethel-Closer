@@ -39,7 +39,7 @@ export type Database = {
           company: string | null
           status: 'lead' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost'
           source: 'organic' | 'referral' | 'ads' | 'event' | 'other'
-          ticket_type: '29_90' | '12k' | '80k' | null
+          ticket_type: '29_90' | '12k' | '80k' | 'impl_ia' | null
           entry_value: number | null
           sale_value: number | null
           closer_id: string

@@ -26,7 +26,7 @@ export interface Profile {
 // Client types
 export type ClientStatus = 'lead' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost'
 export type ClientSource = 'organic' | 'referral' | 'ads' | 'event' | 'other'
-export type TicketType = '29_90' | '12k' | '80k'
+export type TicketType = '29_90' | '12k' | '80k' | 'impl_ia'
 
 export interface Client {
   id: string

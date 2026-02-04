@@ -1,10 +1,40 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/authStore'
+
+// Global theme initializer - applies stored theme on app start
+function ThemeInitializer() {
+  const applyTheme = useCallback(() => {
+    const theme = localStorage.getItem('app-theme') || 'light'
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else if (theme === 'light') {
+      root.classList.remove('dark')
+    } else {
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        root.classList.add('dark')
+      } else {
+        root.classList.remove('dark')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    applyTheme()
+
+    // Listen for theme changes from Settings page
+    const handler = () => applyTheme()
+    window.addEventListener('theme-changed', handler)
+    return () => window.removeEventListener('theme-changed', handler)
+  }, [applyTheme])
+
+  return null
+}
 
 // Pages
 import AuthPage from '@/pages/Auth'
@@ -56,6 +86,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <ThemeInitializer />
         <Toaster />
         <Sonner />
         <BrowserRouter>

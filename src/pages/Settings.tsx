@@ -70,7 +70,7 @@ function getStoredPrefs(): NotificationPrefs {
 }
 
 function getStoredTheme(): string {
-  return localStorage.getItem('app-theme') || 'system'
+  return localStorage.getItem('app-theme') || 'light'
 }
 
 export default function SettingsPage() {
@@ -107,23 +107,22 @@ export default function SettingsPage() {
     toast.success('Preferência atualizada')
   }
 
-  // Apply theme
+  // Apply theme via global ThemeInitializer
   useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else if (theme === 'light') {
-      root.classList.remove('dark')
-    } else {
-      // System
-      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        root.classList.add('dark')
-      } else {
-        root.classList.remove('dark')
-      }
-    }
     localStorage.setItem('app-theme', theme)
+    window.dispatchEvent(new Event('theme-changed'))
   }, [theme])
+
+  // Reset form when profile loads
+  useEffect(() => {
+    if (profile) {
+      form.reset({
+        name: profile.name || '',
+        email: profile.email || '',
+        phone: profile.phone || ''
+      })
+    }
+  }, [profile, form])
 
   const handleUpdateProfile = async (data: ProfileFormData) => {
     setIsLoading(true)
