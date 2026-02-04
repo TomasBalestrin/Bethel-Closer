@@ -390,7 +390,7 @@ export default function CrmCallsPage() {
           {columns.map((column) => (
             <div
               key={column.id}
-              className={`flex-shrink-0 w-[300px] rounded-lg border-t-4 ${column.borderColor} bg-card border border-border`}
+              className={`flex-shrink-0 w-[280px] sm:w-[300px] rounded-lg border-t-4 ${column.borderColor} bg-card border border-border`}
               onDragOver={(e) => handleDragOver(e, column.id)}
               onDrop={(e) => handleDrop(e, column.id)}
             >
@@ -468,7 +468,7 @@ export default function CrmCallsPage() {
                 <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Telefone</Label>
                 <Input placeholder="(11) 99999-9999" {...form.register('phone')} />
@@ -483,7 +483,7 @@ export default function CrmCallsPage() {
             <div className="space-y-1 pt-2">
               <p className="text-sm font-medium text-muted-foreground">Negócio</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Empresa</Label>
                 <Input placeholder="Nome da empresa" {...form.register('company')} />
@@ -493,7 +493,7 @@ export default function CrmCallsPage() {
                 <Input placeholder="Ex: Coaching, Consultoria..." {...form.register('niche')} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Faturamento Mensal (R$)</Label>
                 <Input
@@ -515,7 +515,7 @@ export default function CrmCallsPage() {
             </div>
 
             {/* Origem */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Funil de Origem</Label>
                 <Select
@@ -554,7 +554,7 @@ export default function CrmCallsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Produto Ofertado</Label>
                 <Select

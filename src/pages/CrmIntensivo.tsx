@@ -601,7 +601,7 @@ export default function CrmIntensivoPage() {
             {visibleColumns.map(column => (
               <div
                 key={column.id}
-                className="flex-shrink-0 w-[260px] rounded-lg bg-card border border-border flex flex-col"
+                className="flex-shrink-0 w-[250px] sm:w-[260px] rounded-lg bg-card border border-border flex flex-col"
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, column.id)}
               >

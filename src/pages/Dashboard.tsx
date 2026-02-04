@@ -14,7 +14,9 @@ import {
   ShoppingCart,
   Monitor,
   Flag,
-  Users
+  Users,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -27,11 +29,6 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger
-} from '@/components/ui/popover'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCurrency } from '@/lib/utils'
@@ -81,18 +78,20 @@ function getGreeting(): string {
   return 'Boa noite'
 }
 
-// Get current month date range
-function getMonthDateRange(): { start: Date; end: Date; label: string } {
+// Get month date range for a given offset from current month
+function getMonthDateRange(monthOffset: number): { start: Date; end: Date; label: string; monthLabel: string } {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+  const end = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0)
 
   const formatDate = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const monthLabel = start.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 
   return {
     start,
     end,
-    label: `${formatDate(start)} - ${formatDate(end)}`
+    label: `${formatDate(start)} - ${formatDate(end)}`,
+    monthLabel: monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)
   }
 }
 
@@ -170,7 +169,8 @@ export default function DashboardPage() {
   const dailyVerse = getDailyVerse(user?.id)
   const [funnelFilter, setFunnelFilter] = useState<string>('all')
   const [closerFilter, setCloserFilter] = useState<string>('all')
-  const dateRange = getMonthDateRange()
+  const [monthOffset, setMonthOffset] = useState(0)
+  const dateRange = getMonthDateRange(monthOffset)
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'lider'
 
@@ -356,19 +356,23 @@ export default function DashboardPage() {
               <SelectItem value="impl_ia">Implementação de IA</SelectItem>
             </SelectContent>
           </Select>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="bg-card">
-                <Calendar className="h-4 w-4 mr-2" />
-                {dateRange.label}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-4" align="end">
-              <p className="text-sm text-muted-foreground">
-                Período atual: {dateRange.label}
-              </p>
-            </PopoverContent>
-          </Popover>
+          <div className="flex items-center gap-1 bg-card border rounded-md">
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setMonthOffset(o => o - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 px-3 text-sm font-medium"
+              onClick={() => setMonthOffset(0)}
+              title={dateRange.label}
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              {dateRange.monthLabel}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setMonthOffset(o => o + 1)} disabled={monthOffset >= 0}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
