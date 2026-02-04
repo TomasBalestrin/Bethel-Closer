@@ -48,7 +48,7 @@ const adminNavigation = [
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { profile, signOut, initialize } = useAuthStore()
+  const { user, profile, signOut, initialize } = useAuthStore()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -65,11 +65,12 @@ export function AppLayout() {
     }
   }
 
-  // Build navigation based on user role
+  // Build navigation based on user role (check both profile and user for resilience)
+  const role = profile?.role || user?.role
   const navigation = [
     ...baseNavigation,
-    ...(profile?.role === 'lider' || profile?.role === 'admin' ? leaderNavigation : []),
-    ...(profile?.role === 'admin' ? adminNavigation : [])
+    ...(role === 'lider' || role === 'admin' ? leaderNavigation : []),
+    ...(role === 'admin' ? adminNavigation : [])
   ]
 
   const SidebarContent = () => (
