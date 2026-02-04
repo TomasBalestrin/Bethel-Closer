@@ -1,10 +1,40 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/authStore'
+
+// Global theme initializer - applies stored theme on app start
+function ThemeInitializer() {
+  const applyTheme = useCallback(() => {
+    const theme = localStorage.getItem('app-theme') || 'light'
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else if (theme === 'light') {
+      root.classList.remove('dark')
+    } else {
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        root.classList.add('dark')
+      } else {
+        root.classList.remove('dark')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    applyTheme()
+
+    // Listen for theme changes from Settings page
+    const handler = () => applyTheme()
+    window.addEventListener('theme-changed', handler)
+    return () => window.removeEventListener('theme-changed', handler)
+  }, [applyTheme])
+
+  return null
+}
 
 // Pages
 import AuthPage from '@/pages/Auth'
@@ -17,6 +47,8 @@ import NotificationsPage from '@/pages/Notifications'
 import ReportsPage from '@/pages/Reports'
 import TeamPage from '@/pages/Team'
 import AdminPage from '@/pages/Admin'
+import CrmCallsPage from '@/pages/CrmCalls'
+import CrmIntensivoPage from '@/pages/CrmIntensivo'
 import NotFoundPage from '@/pages/NotFound'
 
 // Layout
@@ -54,6 +86,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <ThemeInitializer />
         <Toaster />
         <Sonner />
         <BrowserRouter>
@@ -72,6 +105,8 @@ function App() {
               <Route path="clients" element={<ClientsPage />} />
               <Route path="clients/:id" element={<ClientDetailPage />} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="crm-calls" element={<CrmCallsPage />} />
+              <Route path="crm-intensivo" element={<CrmIntensivoPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="team" element={<TeamPage />} />

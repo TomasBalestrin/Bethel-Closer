@@ -80,9 +80,10 @@ const sourceLabels: Record<ClientSource, string> = {
 }
 
 const ticketTypeLabels: Record<TicketType, string> = {
-  '29_90': 'CRM Calls (R$ 29,90)',
-  '12k': 'CRM Intensivo (R$ 12k)',
-  '80k': 'Mentoria Premium (R$ 80k)'
+  '29_90': 'Elite Premium',
+  '12k': 'Implementação Comercial',
+  '80k': 'Mentoria Premium Julia',
+  'impl_ia': 'Implementação de IA'
 }
 
 const classificationIcons: Record<CallClassification, React.ReactNode> = {

@@ -11,6 +11,8 @@ import {
   Receipt,
   Building2,
   GraduationCap,
+  ShoppingCart,
+  Monitor,
   Flag
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -38,22 +40,28 @@ import type { TicketType } from '@/types'
 // Product/Ticket type configuration
 const productConfig: Record<TicketType, { name: string; icon: React.ReactNode; bgColor: string; iconBg: string }> = {
   '29_90': {
-    name: 'CRM Calls',
-    icon: <Phone className="h-5 w-5 text-white" />,
+    name: 'Elite Premium',
+    icon: <ShoppingCart className="h-5 w-5 text-white" />,
     bgColor: 'bg-purple-50',
     iconBg: 'bg-purple-600'
   },
   '12k': {
-    name: 'CRM Intensivo',
+    name: 'Implementação Comercial',
     icon: <Building2 className="h-5 w-5 text-white" />,
     bgColor: 'bg-gray-50',
     iconBg: 'bg-gray-600'
   },
   '80k': {
-    name: 'Mentoria Premium',
+    name: 'Mentoria Premium Julia',
     icon: <GraduationCap className="h-5 w-5 text-white" />,
     bgColor: 'bg-emerald-50',
     iconBg: 'bg-emerald-500'
+  },
+  'impl_ia': {
+    name: 'Implementação de IA',
+    icon: <Monitor className="h-5 w-5 text-white" />,
+    bgColor: 'bg-teal-50',
+    iconBg: 'bg-teal-500'
   }
 }
 
@@ -275,9 +283,10 @@ export default function DashboardPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os Funis</SelectItem>
-              <SelectItem value="29_90">CRM Calls</SelectItem>
-              <SelectItem value="12k">CRM Intensivo</SelectItem>
-              <SelectItem value="80k">Mentoria Premium</SelectItem>
+              <SelectItem value="29_90">Elite Premium</SelectItem>
+              <SelectItem value="12k">Implementação Comercial</SelectItem>
+              <SelectItem value="80k">Mentoria Premium Julia</SelectItem>
+              <SelectItem value="impl_ia">Implementação de IA</SelectItem>
             </SelectContent>
           </Select>
           <Popover>
@@ -411,7 +420,7 @@ export default function DashboardPage() {
       {/* Número de Ofertas por Produto */}
       <div>
         <h2 className="text-lg font-bold text-gray-900 mb-4">Número de Ofertas por Produto</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {Object.entries(productConfig).map(([key, config]) => {
             const ticketType = key as TicketType
             const productStat = stats?.productStats?.[ticketType] || {

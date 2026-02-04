@@ -39,7 +39,7 @@ export type Database = {
           company: string | null
           status: 'lead' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost'
           source: 'organic' | 'referral' | 'ads' | 'event' | 'other'
-          ticket_type: '29_90' | '12k' | '80k' | null
+          ticket_type: '29_90' | '12k' | '80k' | 'impl_ia' | null
           entry_value: number | null
           sale_value: number | null
           closer_id: string
@@ -131,6 +131,60 @@ export type Database = {
         }
         Insert: Omit<Database['public']['Tables']['monthly_goals']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['monthly_goals']['Insert']>
+      }
+      crm_call_clients: {
+        Row: {
+          id: string
+          name: string
+          phone: string | null
+          email: string | null
+          company: string | null
+          niche: string | null
+          monthly_revenue: number | null
+          has_partner: boolean
+          funnel_source: string | null
+          sdr: string | null
+          product_offered: string | null
+          stage: 'call_realizada' | 'repitch' | 'pos_call_0_2' | 'pos_call_3_7'
+          call_date: string | null
+          sale_value: number | null
+          closer_id: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['crm_call_clients']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['crm_call_clients']['Insert']>
+      }
+      intensivo_events: {
+        Row: {
+          id: string
+          name: string
+          date: string
+          location: string
+          closer_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['intensivo_events']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['intensivo_events']['Insert']>
+      }
+      intensivo_leads: {
+        Row: {
+          id: string
+          event_id: string
+          name: string
+          phone: string | null
+          email: string | null
+          company: string | null
+          stage: 'abordagem_inicial' | 'nivel_consciencia' | 'convite_intensivo' | 'aguardando_confirmacao' | 'confirmados' | 'retirado_ingresso' | 'aquecimento_30d' | 'aquecimento_7d' | 'aquecimento_1d' | 'compareceram' | 'nao_compareceram' | 'sem_interesse'
+          closer_id: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['intensivo_leads']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['intensivo_leads']['Insert']>
       }
     }
   }
