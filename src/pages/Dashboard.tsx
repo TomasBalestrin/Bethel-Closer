@@ -180,7 +180,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('user_id, name, email')
+        .select('id, user_id, name, email')
         .order('name')
       return data || []
     },
@@ -194,39 +194,18 @@ export default function DashboardPage() {
       const startOfMonth = dateRange.start.toISOString()
       const endOfMonth = dateRange.end.toISOString()
 
-      // Build queries with optional closer_id filter
+      // Build queries with optional closer_id filter (closer_id = profiles.id)
       let clientsQuery = supabase.from('clients').select('id, ticket_type, status, sale_value, entry_value, created_at, closer_id')
-      let callsQuery = supabase.from('calls').select('id, status, quality_score, client_id').gte('scheduled_at', startOfMonth).lte('scheduled_at', endOfMonth)
+      let callsQuery = supabase.from('calls').select('id, status, quality_score, client_id, closer_id').gte('scheduled_at', startOfMonth).lte('scheduled_at', endOfMonth)
       let salesQuery = supabase.from('clients').select('id, sale_value, entry_value, ticket_type, closer_id').eq('status', 'closed_won').gte('created_at', startOfMonth).lte('created_at', endOfMonth)
-      let allCallsQuery = supabase.from('calls').select('id, quality_score').eq('status', 'completed')
+      let allCallsQuery = supabase.from('calls').select('id, quality_score, closer_id').eq('status', 'completed')
 
       // If admin is filtering by specific closer, apply the filter
       if (isAdmin && closerFilter !== 'all') {
         clientsQuery = clientsQuery.eq('closer_id', closerFilter)
         salesQuery = salesQuery.eq('closer_id', closerFilter)
-
-        // For calls, we need to get client_ids first then filter
-        const { data: closerClientIds } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('closer_id', closerFilter)
-        const ids = (closerClientIds || []).map(c => c.id)
-
-        if (ids.length > 0) {
-          callsQuery = callsQuery.in('client_id', ids)
-          allCallsQuery = allCallsQuery.in('client_id', ids)
-        } else {
-          // No clients for this closer
-          return {
-            totalCalls: 0,
-            totalSales: 0,
-            conversionRate: 0,
-            totalSaleValue: 0,
-            totalEntryValue: 0,
-            avgCallScore: null,
-            productStats: {} as Record<TicketType, { count: number; calls: number; callsPercent: number; sales: number; conversionRate: number }>
-          }
-        }
+        callsQuery = callsQuery.eq('closer_id', closerFilter)
+        allCallsQuery = allCallsQuery.eq('closer_id', closerFilter)
       }
 
       const [clientsResult, callsResult, salesResult, allCallsResult] = await Promise.all([
@@ -344,7 +323,7 @@ export default function DashboardPage() {
             {isAdmin
               ? closerFilter === 'all'
                 ? 'Visão geral do desempenho da equipe'
-                : `Desempenho de ${closers.find(c => c.user_id === closerFilter)?.name || 'closer'}`
+                : `Desempenho de ${closers.find(c => c.id === closerFilter)?.name || 'closer'}`
               : 'Confira seu desempenho e acompanhe suas metas'}
           </p>
         </div>
@@ -358,7 +337,7 @@ export default function DashboardPage() {
               <SelectContent>
                 <SelectItem value="all">Todos os Closers</SelectItem>
                 {closers.map((closer) => (
-                  <SelectItem key={closer.user_id} value={closer.user_id}>
+                  <SelectItem key={closer.id} value={closer.id}>
                     {closer.name || closer.email || 'Sem nome'}
                   </SelectItem>
                 ))}
