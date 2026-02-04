@@ -145,7 +145,7 @@ export default function CrmIntensivoPage() {
   const [viewMode, setViewMode] = useState<'kanban' | 'grid'>('kanban')
   const [searchQuery, setSearchQuery] = useState('')
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null)
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
 
   const leadForm = useForm<LeadFormData>({
@@ -281,7 +281,7 @@ export default function CrmIntensivoPage() {
         notes: data.notes || null,
         event_id: currentEventId,
         stage: 'abordagem_inicial',
-        closer_id: profile?.id
+        closer_id: user?.id
       })
       if (error) throw error
     },
@@ -331,7 +331,7 @@ export default function CrmIntensivoPage() {
     mutationFn: async (data: EventFormData) => {
       const { error } = await supabase.from('intensivo_events').insert({
         ...data,
-        closer_id: profile?.id
+        closer_id: user?.id
       })
       if (error) throw error
     },

@@ -131,7 +131,7 @@ export default function CrmCallsPage() {
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [draggedClientId, setDraggedClientId] = useState<string | null>(null)
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const dragOverColumnRef = useRef<CrmCallStage | null>(null)
 
@@ -254,7 +254,7 @@ export default function CrmCallsPage() {
         sale_value: data.sale_value || null,
         notes: data.notes || null,
         stage: 'call_realizada',
-        closer_id: profile?.id
+        closer_id: user?.id
       })
       if (error) throw error
     },

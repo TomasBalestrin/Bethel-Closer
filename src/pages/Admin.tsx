@@ -208,7 +208,7 @@ export default function AdminPage() {
       // Get all team members
       const { data: members } = await supabase
         .from('profiles')
-        .select('id')
+        .select('user_id')
         .in('role', ['closer', 'lider'])
 
       if (!members) return
@@ -218,7 +218,7 @@ export default function AdminPage() {
         const { error } = await supabase
           .from('monthly_goals')
           .upsert({
-            closer_id: member.id,
+            closer_id: member.user_id,
             month,
             year,
             target_calls: goalCalls,
@@ -231,7 +231,7 @@ export default function AdminPage() {
         if (error) {
           // Try insert if upsert fails
           await supabase.from('monthly_goals').insert({
-            closer_id: member.id,
+            closer_id: member.user_id,
             month,
             year,
             target_calls: goalCalls,

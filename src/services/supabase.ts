@@ -119,7 +119,8 @@ export type Database = {
         Row: {
           id: string
           closer_id: string
-          month: string
+          month: number
+          year: number
           target_calls: number
           target_sales: number
           target_revenue: number
