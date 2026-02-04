@@ -45,6 +45,7 @@ import { toast } from 'sonner'
 
 interface TeamMember {
   id: string
+  user_id: string
   name: string
   email: string
   role: 'closer' | 'lider' | 'admin'
@@ -95,10 +96,10 @@ export default function TeamPage() {
       const membersWithStats: TeamMember[] = await Promise.all(
         profiles.map(async (member) => {
           const [clientsResult, callsResult, salesResult, goalsResult] = await Promise.all([
-            supabase.from('clients').select('*', { count: 'exact' }).eq('closer_id', member.id),
-            supabase.from('calls').select('*', { count: 'exact' }).eq('closer_id', member.id),
-            supabase.from('clients').select('sale_value').eq('closer_id', member.id).eq('status', 'closed_won'),
-            supabase.from('monthly_goals').select('*').eq('closer_id', member.id).order('month', { ascending: false }).limit(1)
+            supabase.from('clients').select('*', { count: 'exact' }).eq('closer_id', member.user_id),
+            supabase.from('calls').select('*', { count: 'exact' }).eq('closer_id', member.user_id),
+            supabase.from('clients').select('sale_value').eq('closer_id', member.user_id).eq('status', 'closed_won'),
+            supabase.from('monthly_goals').select('*').eq('closer_id', member.user_id).order('month', { ascending: false }).limit(1)
           ])
 
           const totalRevenue = salesResult.data?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
@@ -109,6 +110,7 @@ export default function TeamPage() {
 
           return {
             id: member.id,
+            user_id: member.user_id,
             name: member.name,
             email: member.email,
             role: member.role as 'closer' | 'lider' | 'admin',
@@ -160,7 +162,7 @@ export default function TeamPage() {
       const { error } = await supabase
         .from('monthly_goals')
         .upsert({
-          closer_id: selectedMember.id,
+          closer_id: selectedMember.user_id,
           month,
           year,
           target_calls: memberGoalCalls,
@@ -173,7 +175,7 @@ export default function TeamPage() {
       if (error) {
         // Try insert if upsert fails
         await supabase.from('monthly_goals').insert({
-          closer_id: selectedMember.id,
+          closer_id: selectedMember.user_id,
           month,
           year,
           target_calls: memberGoalCalls,

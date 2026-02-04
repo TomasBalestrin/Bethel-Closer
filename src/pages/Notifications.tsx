@@ -39,20 +39,20 @@ const notificationColors = {
 }
 
 export default function NotificationsPage() {
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
   // Fetch notifications from Supabase
   const { data: notifications = [], isLoading } = useQuery({
-    queryKey: ['notifications', profile?.id],
+    queryKey: ['notifications', user?.id],
     queryFn: async () => {
-      if (!profile?.id) return []
+      if (!user?.id) return []
 
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('user_id', profile.id)
+        .eq('user_id', user?.id || '')
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -66,7 +66,7 @@ export default function NotificationsPage() {
 
   // Generate notifications from real activity data when table doesn't exist
   async function generateNotificationsFromActivity(): Promise<Notification[]> {
-    if (!profile?.id) return []
+    if (!user?.id) return []
 
     const notifications: Notification[] = []
 
@@ -74,7 +74,7 @@ export default function NotificationsPage() {
     const { data: recentCalls } = await supabase
       .from('calls')
       .select(`*, client:clients(name)`)
-      .eq('closer_id', profile.id)
+      .eq('closer_id', user?.id || '')
       .order('created_at', { ascending: false })
       .limit(10)
 
@@ -87,7 +87,7 @@ export default function NotificationsPage() {
         if (isUpcoming) {
           notifications.push({
             id: `call-reminder-${call.id}`,
-            user_id: profile.id,
+            user_id: user?.id || '',
             type: 'call_reminder',
             title: 'Lembrete de ligação',
             message: `Você tem uma ligação agendada com ${call.client?.name || 'cliente'} em breve`,
@@ -98,7 +98,7 @@ export default function NotificationsPage() {
 
         notifications.push({
           id: `call-scheduled-${call.id}`,
-          user_id: profile.id,
+          user_id: user?.id || '',
           type: 'call_scheduled',
           title: 'Ligação agendada',
           message: `Ligação com ${call.client?.name || 'cliente'} agendada para ${new Date(call.scheduled_at).toLocaleDateString('pt-BR')}`,
@@ -110,7 +110,7 @@ export default function NotificationsPage() {
       if (call.status === 'completed') {
         notifications.push({
           id: `call-completed-${call.id}`,
-          user_id: profile.id,
+          user_id: user?.id || '',
           type: 'call_scheduled',
           title: 'Ligação concluída',
           message: `Ligação com ${call.client?.name || 'cliente'} foi concluída${call.duration_minutes ? ` (${call.duration_minutes} min)` : ''}`,
@@ -124,7 +124,7 @@ export default function NotificationsPage() {
     const { data: recentSales } = await supabase
       .from('clients')
       .select('id, name, sale_value, updated_at')
-      .eq('closer_id', profile.id)
+      .eq('closer_id', user?.id || '')
       .eq('status', 'closed_won')
       .order('updated_at', { ascending: false })
       .limit(5)
@@ -132,7 +132,7 @@ export default function NotificationsPage() {
     recentSales?.forEach(sale => {
       notifications.push({
         id: `sale-${sale.id}`,
-        user_id: profile.id,
+        user_id: user?.id || '',
         type: 'sale_closed',
         title: 'Venda realizada!',
         message: `Venda fechada com ${sale.name}${sale.sale_value ? ` - R$ ${sale.sale_value.toLocaleString('pt-BR')}` : ''}`,
@@ -145,14 +145,14 @@ export default function NotificationsPage() {
     const { data: recentClients } = await supabase
       .from('clients')
       .select('id, name, created_at')
-      .eq('closer_id', profile.id)
+      .eq('closer_id', user?.id || '')
       .order('created_at', { ascending: false })
       .limit(5)
 
     recentClients?.forEach(client => {
       notifications.push({
         id: `client-${client.id}`,
-        user_id: profile.id,
+        user_id: user?.id || '',
         type: 'client_added',
         title: 'Novo cliente',
         message: `${client.name} foi adicionado à sua carteira`,
@@ -189,12 +189,12 @@ export default function NotificationsPage() {
 
   const markAllAsRead = useMutation({
     mutationFn: async () => {
-      if (!profile?.id) return
+      if (!user?.id) return
 
       const { error } = await supabase
         .from('notifications')
         .update({ read: true })
-        .eq('user_id', profile.id)
+        .eq('user_id', user?.id || '')
         .eq('read', false)
 
       if (error) {

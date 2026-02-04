@@ -239,15 +239,21 @@ export default function DashboardPage() {
     queryKey: ['monthly-goal'],
     queryFn: async () => {
       const now = new Date()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('monthly_goals')
         .select('*')
         .eq('month', now.getMonth() + 1)
         .eq('year', now.getFullYear())
-        .single()
+        .maybeSingle()
 
+      if (error) {
+        // Table might not have year column or other schema issues
+        console.warn('Monthly goal fetch error:', error.message)
+        return null
+      }
       return data
-    }
+    },
+    retry: 1
   })
 
   // Cota mínima (minimum quota) - fixed at R$ 80,000

@@ -147,7 +147,7 @@ export default function CallsPage() {
   const [dateTo, setDateTo] = useState('')
   const [deleteCallId, setDeleteCallId] = useState<string | null>(null)
   const [uploadingRecording, setUploadingRecording] = useState<string | null>(null)
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
 
   const form = useForm<CallFormData>({
@@ -263,7 +263,7 @@ export default function CallsPage() {
     mutationFn: async (data: CallFormData) => {
       const { error } = await supabase.from('calls').insert({
         ...data,
-        closer_id: profile?.id,
+        closer_id: user?.id,
         status: 'scheduled'
       })
       if (error) throw error

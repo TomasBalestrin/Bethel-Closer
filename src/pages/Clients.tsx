@@ -117,7 +117,7 @@ export default function ClientsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
   const [ticketFilter, setTicketFilter] = useState<TicketType | 'all'>('all')
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
 
   const form = useForm<ClientFormData>({
@@ -245,7 +245,7 @@ export default function ClientsPage() {
     mutationFn: async (data: ClientFormData) => {
       const { error } = await supabase.from('clients').insert({
         ...data,
-        closer_id: profile?.id
+        closer_id: user?.id
       })
       if (error) throw error
     },

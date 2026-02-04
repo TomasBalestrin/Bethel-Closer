@@ -113,7 +113,7 @@ export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { profile } = useAuthStore()
+  const { user } = useAuthStore()
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
   const [isScheduleCallOpen, setIsScheduleCallOpen] = useState(false)
@@ -207,7 +207,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: profile?.id,
+        user_id: user?.id,
         type: 'status_change',
         description: `Status alterado para ${statusLabels[status]}`
       })
@@ -227,7 +227,7 @@ export default function ClientDetailPage() {
     mutationFn: async (content: string) => {
       const { error } = await supabase.from('client_notes').insert({
         client_id: id,
-        user_id: profile?.id,
+        user_id: user?.id,
         content
       })
       if (error) throw error
@@ -235,7 +235,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: profile?.id,
+        user_id: user?.id,
         type: 'note',
         description: 'Adicionou uma nota'
       })
@@ -256,7 +256,7 @@ export default function ClientDetailPage() {
     mutationFn: async (data: z.infer<typeof callSchema>) => {
       const { error } = await supabase.from('calls').insert({
         client_id: id,
-        closer_id: profile?.id,
+        closer_id: user?.id,
         scheduled_at: data.scheduled_at,
         classification: data.classification,
         notes: data.notes,
@@ -267,7 +267,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: profile?.id,
+        user_id: user?.id,
         type: 'call',
         description: `Agendou ligação para ${formatDateTime(data.scheduled_at)}`
       })
