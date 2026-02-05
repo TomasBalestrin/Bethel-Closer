@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Users,
@@ -85,62 +85,87 @@ export default function TeamPage() {
   const { data: teamMembers = [], isLoading } = useQuery({
     queryKey: ['team-members'],
     queryFn: async () => {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('name')
+      // Batch all queries (4 total instead of N*4)
+      const [profilesResult, clientsResult, callsResult, goalsResult] = await Promise.all([
+        supabase.from('profiles').select('*').order('name'),
+        supabase.from('clients').select('closer_id, status, sale_value'),
+        supabase.from('calls').select('closer_id'),
+        supabase.from('monthly_goals').select('*').order('month', { ascending: false })
+      ])
 
+      const profiles = profilesResult.data
       if (!profiles) return []
 
-      // Get stats for each member
-      const membersWithStats: TeamMember[] = await Promise.all(
-        profiles.map(async (member) => {
-          const [clientsResult, callsResult, salesResult, goalsResult] = await Promise.all([
-            supabase.from('clients').select('*', { count: 'exact' }).eq('closer_id', member.user_id),
-            supabase.from('calls').select('*', { count: 'exact' }).eq('closer_id', member.user_id),
-            supabase.from('clients').select('sale_value').eq('closer_id', member.user_id).eq('status', 'closed_won'),
-            supabase.from('monthly_goals').select('*').eq('closer_id', member.user_id).order('month', { ascending: false }).limit(1)
-          ])
+      const allClients = clientsResult.data || []
+      const allCalls = callsResult.data || []
+      const allGoals = goalsResult.data || []
 
-          const totalRevenue = salesResult.data?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
-          const currentGoal = goalsResult.data?.[0]
-          const goalProgress = currentGoal?.target_sales
-            ? Math.round((salesResult.data?.length || 0) / currentGoal.target_sales * 100)
-            : 0
+      // Pre-aggregate data by closer_id
+      const clientsByCloser = new Map<string, { total: number; wonCount: number; revenue: number }>()
+      for (const c of allClients) {
+        const entry = clientsByCloser.get(c.closer_id) || { total: 0, wonCount: 0, revenue: 0 }
+        entry.total++
+        if (c.status === 'closed_won') {
+          entry.wonCount++
+          entry.revenue += c.sale_value || 0
+        }
+        clientsByCloser.set(c.closer_id, entry)
+      }
 
-          return {
-            id: member.id,
-            user_id: member.user_id,
-            name: member.name,
-            email: member.email,
-            role: member.role as 'closer' | 'lider' | 'admin',
-            avatar_url: member.avatar_url,
-            phone: member.phone,
-            stats: {
-              clients: clientsResult.count || 0,
-              calls: callsResult.count || 0,
-              sales: salesResult.data?.length || 0,
-              revenue: totalRevenue,
-              goalProgress: Math.min(goalProgress, 100)
-            }
+      const callsByCloser = new Map<string, number>()
+      for (const c of allCalls) {
+        callsByCloser.set(c.closer_id, (callsByCloser.get(c.closer_id) || 0) + 1)
+      }
+
+      // Get latest goal per closer (already sorted desc by month)
+      const goalByCloser = new Map<string, typeof allGoals[0]>()
+      for (const g of allGoals) {
+        if (!goalByCloser.has(g.closer_id)) {
+          goalByCloser.set(g.closer_id, g)
+        }
+      }
+
+      return profiles.map((member): TeamMember => {
+        const clientStats = clientsByCloser.get(member.user_id) || { total: 0, wonCount: 0, revenue: 0 }
+        const callCount = callsByCloser.get(member.user_id) || 0
+        const currentGoal = goalByCloser.get(member.user_id)
+        const goalProgress = currentGoal?.target_sales
+          ? Math.round(clientStats.wonCount / currentGoal.target_sales * 100)
+          : 0
+
+        return {
+          id: member.id,
+          user_id: member.user_id,
+          name: member.name,
+          email: member.email,
+          role: member.role as 'closer' | 'lider' | 'admin',
+          avatar_url: member.avatar_url,
+          phone: member.phone,
+          stats: {
+            clients: clientStats.total,
+            calls: callCount,
+            sales: clientStats.wonCount,
+            revenue: clientStats.revenue,
+            goalProgress: Math.min(goalProgress, 100)
           }
-        })
-      )
-
-      return membersWithStats
+        }
+      })
     }
   })
 
-  // Filter members
-  const filteredMembers = teamMembers.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(search.toLowerCase()) ||
-      member.email.toLowerCase().includes(search.toLowerCase())
-    const matchesRole = roleFilter === 'all' || member.role === roleFilter
-    return matchesSearch && matchesRole
-  })
+  // Filter members (memoized)
+  const filteredMembers = useMemo(() => {
+    const searchLower = search.toLowerCase()
+    return teamMembers.filter(member => {
+      const matchesSearch = member.name.toLowerCase().includes(searchLower) ||
+        member.email.toLowerCase().includes(searchLower)
+      const matchesRole = roleFilter === 'all' || member.role === roleFilter
+      return matchesSearch && matchesRole
+    })
+  }, [teamMembers, search, roleFilter])
 
-  // Calculate team totals
-  const teamTotals = teamMembers.reduce(
+  // Calculate team totals (memoized)
+  const teamTotals = useMemo(() => teamMembers.reduce(
     (acc, member) => ({
       members: acc.members + 1,
       clients: acc.clients + member.stats.clients,
@@ -149,7 +174,7 @@ export default function TeamPage() {
       revenue: acc.revenue + member.stats.revenue
     }),
     { members: 0, clients: 0, calls: 0, sales: 0, revenue: 0 }
-  )
+  ), [teamMembers])
 
   const saveGoal = useMutation({
     mutationFn: async () => {
