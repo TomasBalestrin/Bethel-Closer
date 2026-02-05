@@ -114,7 +114,7 @@ type DriveStep = 'inicio' | 'conectando' | 'pasta' | 'config' | 'conectado'
 const MIME_LABELS: Record<string, string> = {
   'application/vnd.google-apps.document': 'Google Docs',
   'text/plain': 'Arquivos de texto (.txt)',
-  '': 'Todos os tipos'
+  'all': 'Todos os tipos'
 }
 
 function GoogleDriveIntegration({ userId }: { userId?: string }) {
@@ -142,6 +142,9 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
 
   // Config state
   const [fileType, setFileType] = useState(config.fileType || 'application/vnd.google-apps.document')
+  // Normalize empty/null fileType to 'all' for Select component (Radix doesn't accept empty string)
+  const fileTypeForSelect = fileType || 'all'
+  const setFileTypeFromSelect = (v: string) => setFileType(v === 'all' ? '' : v)
   const [namePattern, setNamePattern] = useState(config.namePattern || '')
 
   // Sync state
@@ -626,14 +629,14 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
               <div className="max-w-lg mx-auto space-y-4">
                 <div className="space-y-2">
                   <Label>Tipo de arquivo</Label>
-                  <Select value={fileType} onValueChange={setFileType}>
+                  <Select value={fileTypeForSelect} onValueChange={setFileTypeFromSelect}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="application/vnd.google-apps.document">Google Docs (recomendado)</SelectItem>
                       <SelectItem value="text/plain">Arquivos de texto (.txt)</SelectItem>
-                      <SelectItem value="">Todos os tipos</SelectItem>
+                      <SelectItem value="all">Todos os tipos</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">Selecione o formato das suas transcrições</p>
@@ -679,7 +682,7 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                     <p className="text-sm text-muted-foreground">
                       Pasta: {currentConfig.folderName || '(nenhuma)'}
                       {' · '}
-                      {MIME_LABELS[currentConfig.fileType || ''] || currentConfig.fileType || 'Todos os tipos'}
+                      {MIME_LABELS[currentConfig.fileType || 'all'] || currentConfig.fileType || 'Todos os tipos'}
                       {currentConfig.namePattern && ` · Padrão: "${currentConfig.namePattern}"`}
                     </p>
                   </div>
@@ -894,12 +897,12 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Tipo de arquivo</Label>
-              <Select value={fileType} onValueChange={setFileType}>
+              <Select value={fileTypeForSelect} onValueChange={setFileTypeFromSelect}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="application/vnd.google-apps.document">Google Docs</SelectItem>
                   <SelectItem value="text/plain">Arquivos de texto (.txt)</SelectItem>
-                  <SelectItem value="">Todos os tipos</SelectItem>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
