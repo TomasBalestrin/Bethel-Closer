@@ -305,6 +305,56 @@ export async function openPicker(): Promise<DriveFile[]> {
   })
 }
 
+// Open Google Picker in folder-selection mode
+export async function openFolderPicker(existingToken?: string): Promise<DriveFolder | null> {
+  const token = existingToken || await authorize()
+  await loadGAPI()
+
+  return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google
+
+    if (!google?.picker) {
+      reject(new Error('Google Picker não carregou'))
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const callback = (data: any) => {
+      if (data.action === google.picker.Action.PICKED) {
+        const doc = data.docs?.[0]
+        if (doc) {
+          resolve({ id: doc.id, name: doc.name })
+        } else {
+          resolve(null)
+        }
+      } else if (data.action === google.picker.Action.CANCEL) {
+        resolve(null)
+      }
+    }
+
+    try {
+      const docsView = new google.picker.DocsView()
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true)
+        .setMimeTypes('application/vnd.google-apps.folder')
+
+      const picker = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_API_KEY)
+        .setCallback(callback)
+        .setTitle('Selecione a pasta de transcrições')
+        .setLocale('pt-BR')
+        .build()
+
+      picker.setVisible(true)
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
 // ==========================================
 // Drive API Methods
 // ==========================================

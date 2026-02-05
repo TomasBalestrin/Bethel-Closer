@@ -132,7 +132,6 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
 
   // Folder selection state
   const [suggestedFolders, setSuggestedFolders] = useState<DriveFolder[]>([])
-  const [rootFolders, setRootFolders] = useState<DriveFolder[]>([])
   const [folderSearch, setFolderSearch] = useState('')
   const [searchResults, setSearchResults] = useState<DriveFolder[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -217,17 +216,13 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
       const authToken = await drive.authorize()
       setToken(authToken)
 
-      // Load folders for selection
+      // Load suggested folders in background
       setLoadingFolders(true)
-      const [suggested, root] = await Promise.all([
-        drive.searchFolders(authToken),
-        drive.listRootFolders(authToken)
-      ])
+      const suggested = await drive.searchFolders(authToken)
       setSuggestedFolders(suggested)
-      setRootFolders(root)
       setLoadingFolders(false)
 
-      // Auto-select best folder
+      // Auto-select best folder if found
       const best = await drive.autoDetectFolder(authToken)
       if (best) {
         setSelectedFolder({ id: best.id, name: best.name })
@@ -237,6 +232,19 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     } catch (error) {
       setStep('inicio')
       toast.error(error instanceof Error ? error.message : 'Erro ao conectar')
+    }
+  }
+
+  const handleOpenFolderPicker = async () => {
+    try {
+      const authToken = token || await drive.authorize()
+      setToken(authToken)
+      const folder = await drive.openFolderPicker(authToken)
+      if (folder) {
+        setSelectedFolder({ id: folder.id, name: folder.name })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao abrir seletor de pastas')
     }
   }
 
@@ -516,67 +524,80 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                 <p className="text-muted-foreground">Escolha a pasta do Drive onde ficam suas transcrições de ligações</p>
               </div>
 
+              {/* Primary action: Google Picker for folder selection */}
+              <div className="flex flex-col items-center gap-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full max-w-lg h-14 text-base border-2 border-dashed border-blue-300 dark:border-blue-700 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                  onClick={handleOpenFolderPicker}
+                >
+                  <FolderOpen className="mr-3 h-6 w-6 text-blue-600" />
+                  Abrir seletor de pastas do Google Drive
+                </Button>
+
+                {selectedFolder && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 w-full max-w-lg">
+                    <Folder className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                    <span className="font-medium text-blue-700 dark:text-blue-300">{selectedFolder.name}</span>
+                    <CheckCircle2 className="h-4 w-4 text-blue-600 ml-auto flex-shrink-0" />
+                  </div>
+                )}
+              </div>
+
+              {/* Suggested folders (auto-detected) */}
               {loadingFolders ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : (
-                <>
-                  {/* Search */}
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar pasta por nome..."
-                        value={folderSearch}
-                        onChange={(e) => setFolderSearch(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearchFolders()}
-                        className="pl-9"
+              ) : suggestedFolders.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Ou selecione uma pasta sugerida:</p>
+                  <div className="space-y-2">
+                    {suggestedFolders.map(folder => (
+                      <FolderItem
+                        key={folder.id}
+                        folder={folder}
+                        isSelected={selectedFolder?.id === folder.id}
+                        isSuggested
+                        onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
                       />
-                    </div>
-                    <Button variant="outline" onClick={handleSearchFolders} disabled={isSearching}>
-                      {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                    </Button>
+                    ))}
                   </div>
-
-                  {/* Suggested folders */}
-                  {suggestedFolders.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-2">Pastas sugeridas (detectadas automaticamente)</p>
-                      <div className="space-y-2">
-                        {suggestedFolders.map(folder => (
-                          <FolderItem
-                            key={folder.id}
-                            folder={folder}
-                            isSelected={selectedFolder?.id === folder.id}
-                            isSuggested
-                            onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Root folders / search results */}
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-2">
-                      {searchResults.length > 0 ? 'Resultados da busca' : 'Pastas do Drive'}
-                    </p>
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {(searchResults.length > 0 ? searchResults : rootFolders)
-                        .filter(f => !suggestedFolders.some(s => s.id === f.id))
-                        .map(folder => (
-                          <FolderItem
-                            key={folder.id}
-                            folder={folder}
-                            isSelected={selectedFolder?.id === folder.id}
-                            onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
-                          />
-                        ))}
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
+
+              {/* Search folders */}
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Buscar pasta por nome:</p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar pasta por nome..."
+                      value={folderSearch}
+                      onChange={(e) => setFolderSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearchFolders()}
+                      className="pl-9"
+                    />
+                  </div>
+                  <Button variant="outline" onClick={handleSearchFolders} disabled={isSearching}>
+                    {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {searchResults.length > 0 && (
+                  <div className="space-y-2 mt-2 max-h-[200px] overflow-y-auto">
+                    {searchResults.map(folder => (
+                      <FolderItem
+                        key={folder.id}
+                        folder={folder}
+                        isSelected={selectedFolder?.id === folder.id}
+                        onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setStep('inicio')}>Voltar</Button>
