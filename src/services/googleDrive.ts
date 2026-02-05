@@ -6,6 +6,14 @@ const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || ''
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 
+// Known folder name patterns for auto-detection (case-insensitive)
+const KNOWN_FOLDER_PATTERNS = [
+  'bethel',
+  'gravações', 'gravacoes', 'gravacao',
+  'transcrições', 'transcricoes', 'transcricao',
+  'recordings', 'calls', 'ligações', 'ligacoes'
+]
+
 // ==========================================
 // Types
 // ==========================================
@@ -142,6 +150,102 @@ export async function authorize(): Promise<string> {
 
     tokenClient.requestAccessToken()
   })
+}
+
+// Try to authorize silently (no popup) using existing Google session
+export async function authorizeSilent(): Promise<string | null> {
+  if (hasValidToken()) return currentAccessToken!
+
+  if (!GOOGLE_CLIENT_ID) return null
+
+  await loadGIS()
+
+  return new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google
+    if (!google?.accounts?.oauth2) {
+      resolve(null)
+      return
+    }
+
+    const tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPES,
+      prompt: '',  // Empty string = silent auth, no popup
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      callback: (response: any) => {
+        if (response.error) {
+          resolve(null)
+          return
+        }
+        currentAccessToken = response.access_token
+        tokenExpiry = Date.now() + (response.expires_in - 300) * 1000
+        resolve(response.access_token)
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      error_callback: () => {
+        resolve(null)
+      }
+    })
+
+    tokenClient.requestAccessToken()
+  })
+}
+
+// ==========================================
+// Folder Auto-Detection
+// ==========================================
+
+export interface DriveFolder {
+  id: string
+  name: string
+}
+
+// Search for folders matching known patterns
+export async function searchFolders(token: string): Promise<DriveFolder[]> {
+  const nameConditions = KNOWN_FOLDER_PATTERNS
+    .map(p => `name contains '${p}'`)
+    .join(' or ')
+
+  const query = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and (${nameConditions})`
+
+  const params = new URLSearchParams({
+    q: query,
+    fields: 'files(id,name)',
+    pageSize: '20',
+    key: GOOGLE_API_KEY
+  })
+
+  const response = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  if (!response.ok) return []
+
+  const data = await response.json()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.files || []).map((f: any) => ({ id: f.id, name: f.name }))
+}
+
+// Auto-detect the best folder: prioritize "bethel" > "gravacoes/transcricoes" > others
+export async function autoDetectFolder(token: string): Promise<DriveFolder | null> {
+  const folders = await searchFolders(token)
+  if (folders.length === 0) return null
+
+  // Priority: exact "bethel" match first
+  const nameLower = (f: DriveFolder) => f.name.toLowerCase()
+  const bethelFolder = folders.find(f => nameLower(f).includes('bethel'))
+  if (bethelFolder) return bethelFolder
+
+  // Then recording/transcription folders
+  const recordingFolder = folders.find(f => {
+    const n = nameLower(f)
+    return n.includes('gravac') || n.includes('transcri') || n.includes('recording')
+  })
+  if (recordingFolder) return recordingFolder
+
+  // Fallback to first match
+  return folders[0]
 }
 
 // ==========================================

@@ -48,7 +48,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
-import { syncFromDrive, deriveResultStatus } from '@/services/driveSync'
+import { syncFromDrive, connectDrive, trySilentSync, isDriveConnected, getDriveConfig, disconnectDrive, deriveResultStatus } from '@/services/driveSync'
 import type { SyncProgress } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
 import { formatDate } from '@/lib/utils'
@@ -269,25 +269,85 @@ export default function CallsPage() {
 
   // ── Actions ──
 
-  const handleSync = useCallback(async () => {
-    if (!user?.id || syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing') return
+  const isSyncing = syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' || syncProgress?.status === 'connecting'
 
-    const result = await syncFromDrive(user.id, (progress) => {
-      setSyncProgress(progress)
-    })
-
+  // Handle sync result (shared between manual and auto sync)
+  const handleSyncResult = useCallback((result: { imported: number; analyzed: number; errors: string[] }, silent?: boolean) => {
     if (result.imported > 0 || result.analyzed > 0) {
       queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
-      toast.success(`${result.imported} calls importadas, ${result.analyzed} analisadas`)
+      if (!silent) {
+        toast.success(`${result.imported} calls importadas, ${result.analyzed} analisadas`)
+      }
     }
-
-    if (result.errors.length > 0) {
+    if (result.errors.length > 0 && !silent) {
       toast.error(`${result.errors.length} erro(s) durante a sincronização`)
     }
-
-    // Clear progress after delay
     setTimeout(() => setSyncProgress(null), 5000)
-  }, [user?.id, syncProgress, queryClient])
+  }, [queryClient])
+
+  // Manual sync: connects Drive (with popup if first time) + syncs
+  const handleSync = useCallback(async () => {
+    if (!user?.id || isSyncing) return
+
+    try {
+      if (!isDriveConnected()) {
+        // First time: connect with popup + auto-detect folder
+        const { token, folderName } = await connectDrive((progress) => {
+          setSyncProgress(progress)
+        })
+
+        if (folderName) {
+          toast.success(`Pasta detectada: "${folderName}"`)
+        }
+
+        // Now sync with the obtained token
+        const result = await syncFromDrive(user.id, (progress) => {
+          setSyncProgress(progress)
+        }, token)
+        handleSyncResult(result)
+      } else {
+        // Already connected: regular sync
+        const result = await syncFromDrive(user.id, (progress) => {
+          setSyncProgress(progress)
+        })
+        handleSyncResult(result)
+      }
+    } catch (error) {
+      setSyncProgress({ status: 'error', message: error instanceof Error ? error.message : 'Erro na sincronização' })
+      setTimeout(() => setSyncProgress(null), 5000)
+    }
+  }, [user?.id, isSyncing, handleSyncResult])
+
+  // Auto-sync on page load (silent, no popup)
+  useEffect(() => {
+    if (!user?.id || !isDriveConnected()) return
+
+    let cancelled = false
+
+    const autoSync = async () => {
+      const result = await trySilentSync(user.id, (progress) => {
+        if (!cancelled) setSyncProgress(progress)
+      })
+      if (result && !cancelled) {
+        handleSyncResult(result, true) // silent = true (no toast for 0 imports)
+        if (result.imported > 0) {
+          toast.success(`Auto-sync: ${result.imported} novas calls importadas`)
+        }
+      }
+    }
+
+    // Initial auto-sync after a short delay (let page render first)
+    const initialTimer = setTimeout(autoSync, 2000)
+
+    // Periodic sync every 5 minutes
+    const intervalTimer = setInterval(autoSync, 5 * 60 * 1000)
+
+    return () => {
+      cancelled = true
+      clearTimeout(initialTimer)
+      clearInterval(intervalTimer)
+    }
+  }, [user?.id, handleSyncResult])
 
   const handleAnalyzeCall = async (call: Call & { client?: Client }) => {
     if (!call.notes) {
@@ -364,17 +424,23 @@ export default function CallsPage() {
               )}
             </div>
           )}
+          {isDriveConnected() && (
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mr-1">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              {getDriveConfig().folderName || 'Drive conectado'}
+            </div>
+          )}
           <Button
             variant="outline"
             onClick={handleSync}
-            disabled={syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' || syncProgress?.status === 'connecting'}
+            disabled={isSyncing}
           >
-            {syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' ? (
+            {isSyncing ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <FolderSync className="h-4 w-4 mr-2" />
             )}
-            Sincronizar Drive
+            {isDriveConnected() ? 'Sincronizar' : 'Conectar Drive'}
           </Button>
         </div>
       </div>
@@ -518,11 +584,13 @@ export default function CallsPage() {
             <Phone className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground text-lg mb-2">Nenhuma call encontrada</p>
             <p className="text-sm text-muted-foreground mb-4">
-              Sincronize com o Google Drive para importar transcrições
+              {isDriveConnected()
+                ? 'Nenhuma transcrição nova no Drive. As novas aparecerão automaticamente.'
+                : 'Conecte o Google Drive para importar transcrições automaticamente'}
             </p>
             <Button variant="outline" onClick={handleSync}>
               <FolderSync className="h-4 w-4 mr-2" />
-              Sincronizar Drive
+              {isDriveConnected() ? 'Sincronizar Agora' : 'Conectar Google Drive'}
             </Button>
           </CardContent>
         </Card>

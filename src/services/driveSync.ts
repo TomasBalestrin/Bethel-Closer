@@ -1,4 +1,4 @@
-import { authorize, listRecentFiles, downloadFileContent } from './googleDrive'
+import { authorize, authorizeSilent, listRecentFiles, downloadFileContent, autoDetectFolder, hasValidToken } from './googleDrive'
 import { supabase } from './supabase'
 import { analyzeCallTranscript } from './openai'
 import type { CallResultStatus } from '@/types'
@@ -16,17 +16,62 @@ export interface SyncResult {
   errors: string[]
 }
 
-// Drive folder ID storage
+// ── Drive config persistence ──
+// Stores: folder_id, folder_name, connected flag, last_sync timestamp
+
+const STORAGE_KEY = 'bethel_drive_config'
+
+interface DriveConfig {
+  folderId: string | null
+  folderName: string | null
+  connected: boolean
+  lastSync: string | null
+}
+
+function getConfig(): DriveConfig {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch {
+    // corrupt data
+  }
+  return { folderId: null, folderName: null, connected: false, lastSync: null }
+}
+
+function saveConfig(updates: Partial<DriveConfig>): void {
+  const current = getConfig()
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...updates }))
+}
+
+// Backwards compat: migrate old key
+function migrateOldConfig(): void {
+  const oldFolderId = localStorage.getItem('bethel_drive_folder_id')
+  if (oldFolderId) {
+    saveConfig({ folderId: oldFolderId, connected: true })
+    localStorage.removeItem('bethel_drive_folder_id')
+  }
+}
+migrateOldConfig()
+
+// Public API for Drive config
 export function getDriveFolderId(): string | null {
-  return localStorage.getItem('bethel_drive_folder_id')
+  return getConfig().folderId
 }
 
 export function setDriveFolderId(folderId: string | null): void {
-  if (folderId) {
-    localStorage.setItem('bethel_drive_folder_id', folderId)
-  } else {
-    localStorage.removeItem('bethel_drive_folder_id')
-  }
+  saveConfig({ folderId })
+}
+
+export function isDriveConnected(): boolean {
+  return getConfig().connected
+}
+
+export function getDriveConfig(): DriveConfig {
+  return getConfig()
+}
+
+export function disconnectDrive(): void {
+  localStorage.removeItem(STORAGE_KEY)
 }
 
 // Get already-imported Drive file IDs
@@ -61,19 +106,73 @@ export function deriveResultStatus(analysis: Record<string, any>): CallResultSta
   return 'pendente'
 }
 
+// Connect to Drive for the first time (with popup) + auto-detect folder
+export async function connectDrive(
+  onProgress?: (progress: SyncProgress) => void
+): Promise<{ token: string; folderId: string | null; folderName: string | null }> {
+  onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
+  const token = await authorize()
+
+  // Auto-detect folder
+  onProgress?.({ status: 'listing', message: 'Detectando pasta de gravações...' })
+  const folder = await autoDetectFolder(token)
+
+  const folderId = folder?.id || null
+  const folderName = folder?.name || null
+
+  // Save config
+  saveConfig({
+    folderId,
+    folderName,
+    connected: true,
+    lastSync: null
+  })
+
+  return { token, folderId, folderName }
+}
+
+// Try silent sync (no popup) - returns null if can't auth silently
+export async function trySilentSync(
+  closerId: string,
+  onProgress?: (progress: SyncProgress) => void
+): Promise<SyncResult | null> {
+  if (!isDriveConnected()) return null
+
+  const token = await authorizeSilent()
+  if (!token) return null
+
+  return syncFromDrive(closerId, onProgress, token)
+}
+
 // Main sync function
 export async function syncFromDrive(
   closerId: string,
-  onProgress?: (progress: SyncProgress) => void
+  onProgress?: (progress: SyncProgress) => void,
+  existingToken?: string
 ): Promise<SyncResult> {
   const result: SyncResult = { imported: 0, analyzed: 0, errors: [] }
 
   try {
-    onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
-    const token = await authorize()
+    let token = existingToken
+    if (!token) {
+      onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
+      token = await authorize()
+    }
+
+    // If first sync or no folder configured, auto-detect
+    const config = getConfig()
+    let folderId = config.folderId
+
+    if (!folderId && config.connected) {
+      onProgress?.({ status: 'listing', message: 'Detectando pasta de gravações...' })
+      const folder = await autoDetectFolder(token)
+      if (folder) {
+        folderId = folder.id
+        saveConfig({ folderId: folder.id, folderName: folder.name })
+      }
+    }
 
     onProgress?.({ status: 'listing', message: 'Listando arquivos recentes...' })
-    const folderId = getDriveFolderId()
     const files = await listRecentFiles(token, folderId || undefined)
 
     if (files.length === 0) {
@@ -167,6 +266,9 @@ export async function syncFromDrive(
         result.errors.push(`${file.name}: ${fileError instanceof Error ? fileError.message : 'erro desconhecido'}`)
       }
     }
+
+    // Mark drive as connected and save last sync time
+    saveConfig({ connected: true, lastSync: new Date().toISOString() })
 
     onProgress?.({
       status: 'done',
