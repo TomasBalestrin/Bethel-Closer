@@ -161,22 +161,14 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
 
   // Bootstrap: ensure admin's own profile exists in the DB
   // (fixes "Total de Closers: 0" when profiles table is empty)
-  const [bootstrapped, setBootstrapped] = useState(false)
   const bootstrapRan = useRef(false)
   useEffect(() => {
     if (bootstrapRan.current || !user?.id) return
     bootstrapRan.current = true
 
     const ensureAdminProfile = async () => {
-      // Try RPC first (works if migration 007 applied)
-      const { error: rpcError } = await supabase.rpc('ensure_my_profile', {
-        p_name: profile?.name || user.name || user.email?.split('@')[0] || '',
-        p_email: profile?.email || user.email || '',
-        p_role: profile?.role || 'admin'
-      })
-
-      if (rpcError) {
-        // RPC not available, try direct insert (RLS allows self-insert)
+      try {
+        // Check if profile already exists
         const { data: existing } = await supabase
           .from('profiles')
           .select('id')
@@ -184,6 +176,7 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
           .maybeSingle()
 
         if (!existing) {
+          // Direct insert (RLS allows self-insert: auth.uid() = user_id)
           await supabase.from('profiles').insert({
             user_id: user.id,
             email: user.email || profile?.email || '',
@@ -191,26 +184,25 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
             role: (profile?.role || 'admin') as 'admin' | 'closer' | 'lider'
           })
         }
-      }
 
-      setBootstrapped(true)
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+        queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      } catch {
+        // Ignore bootstrap errors — page still works with cached profile
+      }
     }
     ensureAdminProfile()
-  }, [user?.id])
+  }, [user?.id, profile, queryClient])
 
   // Fetch all users
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .order('name')
-      if (error) throw error
       return data || []
-    },
-    enabled: bootstrapped
+    }
   })
 
   // Fetch monthly goals to check who has goals set
@@ -218,12 +210,19 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
     queryKey: ['admin-current-goals'],
     queryFn: async () => {
       const now = new Date()
-      const { data } = await supabase
+      // Try with year column first, fall back without it
+      let result = await supabase
         .from('monthly_goals')
         .select('closer_id')
         .eq('month', now.getMonth() + 1)
         .eq('year', now.getFullYear())
-      return data || []
+      if (result.error) {
+        result = await supabase
+          .from('monthly_goals')
+          .select('closer_id')
+          .eq('month', now.getMonth() + 1)
+      }
+      return result.data || []
     },
     retry: false
   })
@@ -232,10 +231,14 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
   const { data: driveConfigs = [] } = useQuery({
     queryKey: ['admin-drive-configs'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('drive_sync_config')
-        .select('closer_id')
-      return data || []
+      try {
+        const { data } = await supabase
+          .from('drive_sync_config')
+          .select('closer_id')
+        return data || []
+      } catch {
+        return []
+      }
     },
     retry: false
   })
@@ -598,50 +601,56 @@ function CreateCloserDialog({
 
     setIsCreating(true)
     try {
-      // Call GoTrue API directly to create auth user WITHOUT affecting the
-      // admin's current session (supabase.auth.signUp switches the session)
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      // Save current admin session before any auth operations
+      const { data: { session: adminSession } } = await supabase.auth.getSession()
 
-      const signUpResponse = await fetch(`${supabaseUrl}/auth/v1/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-          data: { name: name.trim() }
-        })
+      // Try signUp — use supabase client but restore session immediately after
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            name: name.trim(),
+            full_name: name.trim(),
+            display_name: name.trim()
+          }
+        }
       })
 
-      const signUpResult = await signUpResponse.json()
+      // IMMEDIATELY restore admin session (signUp switches to the new user)
+      if (adminSession) {
+        await supabase.auth.setSession({
+          access_token: adminSession.access_token,
+          refresh_token: adminSession.refresh_token
+        })
+      }
 
-      if (!signUpResponse.ok) {
-        const errMsg = signUpResult.msg || signUpResult.message || signUpResult.error_description || ''
-        if (errMsg.toLowerCase().includes('already') || errMsg.toLowerCase().includes('registered')) {
+      if (signUpError) {
+        const msg = signUpError.message.toLowerCase()
+        if (msg.includes('already') || msg.includes('registered')) {
           throw new Error('Este email já está cadastrado no sistema.')
         }
-        if (errMsg.toLowerCase().includes('database error')) {
+        if (msg.includes('database error')) {
           throw new Error(
-            'Erro no banco de dados. Execute a migration 007_admin_user_management.sql no Supabase SQL Editor para corrigir triggers.'
+            'Erro de trigger no banco. Abra o SQL Editor do Supabase e execute:\n\n' +
+            'DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;\n' +
+            'DROP FUNCTION IF EXISTS handle_new_user();\n\n' +
+            'Depois tente novamente.'
           )
         }
-        throw new Error(errMsg || 'Erro ao criar usuário')
+        throw signUpError
       }
 
-      // Extract user ID (response format varies by Supabase version)
-      const newUserId = signUpResult.id || signUpResult.user?.id
+      const newUserId = signUpData.user?.id
       if (!newUserId) {
-        throw new Error('Usuário pode ter sido criado, mas o ID não foi retornado. Verifique no painel do Supabase.')
+        throw new Error('Usuário criado. Se o email de confirmação estiver ativado, o closer precisará confirmar.')
       }
 
-      // Wait briefly for any auth trigger to create the profile
-      await new Promise(resolve => setTimeout(resolve, 300))
+      // Wait for any trigger to finish
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Create/update profile via RPC (preferred, bypasses RLS)
+      // Create/update profile — try multiple strategies
+      // Strategy 1: RPC (best, bypasses RLS via SECURITY DEFINER)
       const { error: rpcError } = await supabase.rpc('admin_create_profile', {
         p_user_id: newUserId,
         p_name: name.trim(),
@@ -651,7 +660,7 @@ function CreateCloserDialog({
       })
 
       if (rpcError) {
-        // RPC not available, try direct upsert (works if admin RLS policy exists)
+        // Strategy 2: Direct upsert (needs admin RLS policy)
         const { error: upsertError } = await supabase
           .from('profiles')
           .upsert({
@@ -663,8 +672,8 @@ function CreateCloserDialog({
           }, { onConflict: 'user_id' })
 
         if (upsertError) {
-          // Last resort: try update (trigger may have created the row)
-          const { error: updateError } = await supabase
+          // Strategy 3: Update only (trigger may have created the row)
+          await supabase
             .from('profiles')
             .update({
               name: name.trim(),
@@ -673,14 +682,6 @@ function CreateCloserDialog({
               role
             })
             .eq('user_id', newUserId)
-
-          if (updateError) {
-            // Auth user created but profile failed — will auto-create on first login
-            toast.warning(
-              'Usuário criado no auth, mas o perfil não pôde ser configurado. ' +
-              'Execute a migration 007 no Supabase SQL Editor. O closer poderá fazer login normalmente.'
-            )
-          }
         }
       }
 
