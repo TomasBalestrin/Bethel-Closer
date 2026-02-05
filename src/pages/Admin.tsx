@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield,
@@ -151,6 +151,7 @@ export default function AdminPage() {
 
 function ClosersTab({ currentUserId }: { currentUserId?: string }) {
   const queryClient = useQueryClient()
+  const { user, profile } = useAuthStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
@@ -158,16 +159,58 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
 
+  // Bootstrap: ensure admin's own profile exists in the DB
+  // (fixes "Total de Closers: 0" when profiles table is empty)
+  const [bootstrapped, setBootstrapped] = useState(false)
+  const bootstrapRan = useRef(false)
+  useEffect(() => {
+    if (bootstrapRan.current || !user?.id) return
+    bootstrapRan.current = true
+
+    const ensureAdminProfile = async () => {
+      // Try RPC first (works if migration 007 applied)
+      const { error: rpcError } = await supabase.rpc('ensure_my_profile', {
+        p_name: profile?.name || user.name || user.email?.split('@')[0] || '',
+        p_email: profile?.email || user.email || '',
+        p_role: profile?.role || 'admin'
+      })
+
+      if (rpcError) {
+        // RPC not available, try direct insert (RLS allows self-insert)
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (!existing) {
+          await supabase.from('profiles').insert({
+            user_id: user.id,
+            email: user.email || profile?.email || '',
+            name: profile?.name || user.name || user.email?.split('@')[0] || '',
+            role: (profile?.role || 'admin') as 'admin' | 'closer' | 'lider'
+          })
+        }
+      }
+
+      setBootstrapped(true)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    }
+    ensureAdminProfile()
+  }, [user?.id])
+
   // Fetch all users
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .order('name')
+      if (error) throw error
       return data || []
-    }
+    },
+    enabled: bootstrapped
   })
 
   // Fetch monthly goals to check who has goals set
@@ -555,41 +598,73 @@ function CreateCloserDialog({
 
     setIsCreating(true)
     try {
-      // Create auth user (without metadata to avoid trigger conflicts)
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password
+      // Call GoTrue API directly to create auth user WITHOUT affecting the
+      // admin's current session (supabase.auth.signUp switches the session)
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+      const signUpResponse = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          data: { name: name.trim() }
+        })
       })
 
-      if (error) {
-        // Handle common Supabase auth errors with friendly messages
-        if (error.message.includes('Database error')) {
-          throw new Error('Erro no banco de dados. Verifique se o email já está cadastrado ou contate o suporte.')
-        }
-        if (error.message.includes('already registered')) {
+      const signUpResult = await signUpResponse.json()
+
+      if (!signUpResponse.ok) {
+        const errMsg = signUpResult.msg || signUpResult.message || signUpResult.error_description || ''
+        if (errMsg.toLowerCase().includes('already') || errMsg.toLowerCase().includes('registered')) {
           throw new Error('Este email já está cadastrado no sistema.')
         }
-        throw error
+        if (errMsg.toLowerCase().includes('database error')) {
+          throw new Error(
+            'Erro no banco de dados. Execute a migration 007_admin_user_management.sql no Supabase SQL Editor para corrigir triggers.'
+          )
+        }
+        throw new Error(errMsg || 'Erro ao criar usuário')
       }
 
-      if (data.user) {
-        // Wait briefly for any auth trigger to complete
-        await new Promise(resolve => setTimeout(resolve, 500))
+      // Extract user ID (response format varies by Supabase version)
+      const newUserId = signUpResult.id || signUpResult.user?.id
+      if (!newUserId) {
+        throw new Error('Usuário pode ter sido criado, mas o ID não foi retornado. Verifique no painel do Supabase.')
+      }
 
-        // Update profile with name, phone, role
-        const { error: profileError } = await supabase
+      // Wait briefly for any auth trigger to create the profile
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      // Create/update profile via RPC (preferred, bypasses RLS)
+      const { error: rpcError } = await supabase.rpc('admin_create_profile', {
+        p_user_id: newUserId,
+        p_name: name.trim(),
+        p_email: email.trim(),
+        p_phone: phone || null,
+        p_role: role
+      })
+
+      if (rpcError) {
+        // RPC not available, try direct upsert (works if admin RLS policy exists)
+        const { error: upsertError } = await supabase
           .from('profiles')
           .upsert({
-            user_id: data.user.id,
+            user_id: newUserId,
             name: name.trim(),
             email: email.trim(),
             phone: phone || null,
             role
           }, { onConflict: 'user_id' })
 
-        if (profileError) {
-          // Try update instead of upsert (trigger may have created the row)
-          await supabase
+        if (upsertError) {
+          // Last resort: try update (trigger may have created the row)
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({
               name: name.trim(),
@@ -597,11 +672,19 @@ function CreateCloserDialog({
               phone: phone || null,
               role
             })
-            .eq('user_id', data.user.id)
+            .eq('user_id', newUserId)
+
+          if (updateError) {
+            // Auth user created but profile failed — will auto-create on first login
+            toast.warning(
+              'Usuário criado no auth, mas o perfil não pôde ser configurado. ' +
+              'Execute a migration 007 no Supabase SQL Editor. O closer poderá fazer login normalmente.'
+            )
+          }
         }
       }
 
-      toast.success(`Closer "${name}" criado com sucesso!`)
+      toast.success(`Closer "${name.trim()}" criado com sucesso!`)
       onCreated()
       onOpenChange(false)
       setName('')
