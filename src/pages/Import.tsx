@@ -111,6 +111,7 @@ interface ImportedFile {
 }
 
 function GoogleDriveIntegration({ userId }: { userId?: string }) {
+  const googleConfigured = drive.isConfigured()
   const [step, setStep] = useState<DriveStep>(drive.hasValidToken() ? 'conectado' : 'inicio')
   const [isImporting, setIsImporting] = useState(false)
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() => {
@@ -124,6 +125,44 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
   const [selectedAnalysis, setSelectedAnalysis] = useState<Record<string, unknown> | null>(null)
 
   const stepIndex = step === 'inicio' ? 0 : step === 'permissoes' ? 1 : 2
+
+  // If Google credentials are not configured, show a message instead of the wizard
+  if (!googleConfigured) {
+    return (
+      <Card>
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
+              <Cloud className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Integração Google Drive</h3>
+              <p className="text-sm text-muted-foreground">Conecte sua conta para importar transcrições automaticamente</p>
+            </div>
+          </div>
+        </div>
+        <CardContent className="p-6">
+          <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
+            <div className="h-14 w-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <AlertCircle className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold mb-1">Integração não configurada</h3>
+              <p className="text-sm text-muted-foreground max-w-md">
+                A integração com Google Drive ainda não foi configurada neste ambiente.
+                O administrador precisa adicionar as credenciais do Google nas variáveis de ambiente do deploy.
+              </p>
+            </div>
+            <div className="bg-muted rounded-lg p-4 text-left text-xs font-mono max-w-sm w-full space-y-1">
+              <p className="text-muted-foreground"># Variáveis necessárias no Vercel:</p>
+              <p>VITE_GOOGLE_CLIENT_ID=seu_client_id</p>
+              <p>VITE_GOOGLE_API_KEY=sua_api_key</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   // Save files to localStorage when they change
   const saveFiles = (files: ImportedFile[]) => {
