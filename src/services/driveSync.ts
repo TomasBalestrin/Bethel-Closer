@@ -393,7 +393,9 @@ export async function syncFromDrive(
           const analysis = await analyzeCallTranscript(content)
           const resultStatus = deriveResultStatus(analysis)
 
-          await supabase
+          console.log('[DriveSync] Analysis complete for', file.name, '- nota:', analysis.nota_geral, '- updating call:', callData.id)
+
+          const { error: updateError } = await supabase
             .from('calls')
             .update({
               ai_summary: [
@@ -411,7 +413,18 @@ export async function syncFromDrive(
             })
             .eq('id', callData.id)
 
-          result.analyzed++
+          if (updateError) {
+            console.error('[DriveSync] Failed to update call with analysis:', updateError)
+            result.errors.push({
+              fileName: file.name,
+              error: 'Falha ao salvar análise',
+              detail: updateError.message,
+              phase: 'analysis'
+            })
+          } else {
+            console.log('[DriveSync] Successfully saved analysis for call:', callData.id)
+            result.analyzed++
+          }
         } catch (aiError) {
           result.errors.push({
             fileName: file.name,
@@ -535,7 +548,9 @@ export async function importSpecificFiles(
         const analysis = await analyzeCallTranscript(content)
         const resultStatus = deriveResultStatus(analysis)
 
-        await supabase
+        console.log('[DriveSync] Analysis complete for', file.name, '- nota:', analysis.nota_geral)
+
+        const { error: updateError } = await supabase
           .from('calls')
           .update({
             ai_summary: [
@@ -553,7 +568,18 @@ export async function importSpecificFiles(
           })
           .eq('id', callData.id)
 
-        result.analyzed++
+        if (updateError) {
+          console.error('[DriveSync] Failed to update call:', updateError)
+          result.errors.push({
+            fileName: file.name,
+            error: 'Falha ao salvar análise',
+            detail: updateError.message,
+            phase: 'analysis'
+          })
+        } else {
+          console.log('[DriveSync] Successfully saved analysis')
+          result.analyzed++
+        }
       } catch (aiError) {
         result.errors.push({
           fileName: file.name,

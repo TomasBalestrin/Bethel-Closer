@@ -26,7 +26,8 @@ import {
   XCircle,
   ChevronLeft,
   ChevronRight,
-  Zap
+  Zap,
+  Trash2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -402,6 +403,26 @@ export default function CallsPage() {
     toast.success('Status atualizado!')
   }
 
+  const handleDeleteCall = async (callId: string, callName: string) => {
+    const confirmed = window.confirm(`Tem certeza que deseja excluir a call "${callName}"?\n\nEsta ação não pode ser desfeita.`)
+    if (!confirmed) return
+
+    try {
+      const { error } = await supabase
+        .from('calls')
+        .delete()
+        .eq('id', callId)
+
+      if (error) throw error
+
+      queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
+      setSelectedCall(null)
+      toast.success('Call excluída com sucesso!')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao excluir call')
+    }
+  }
+
   // ── Render ──
 
   return (
@@ -633,6 +654,7 @@ export default function CallsPage() {
         onClose={() => setSelectedCall(null)}
         onStatusChange={handleStatusChange}
         onAnalyze={handleAnalyzeCall}
+        onDelete={handleDeleteCall}
         isAnalyzing={isAnalyzing === selectedCall?.id}
       />
     </div>
@@ -775,10 +797,11 @@ interface CallDetailDialogProps {
   onClose: () => void
   onStatusChange: (callId: string, status: CallResultStatus) => void
   onAnalyze: (call: Call & { client?: Client }) => void
+  onDelete: (callId: string, callName: string) => void
   isAnalyzing?: boolean
 }
 
-function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, isAnalyzing }: CallDetailDialogProps) {
+function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, onDelete, isAnalyzing }: CallDetailDialogProps) {
   const [activeSection, setActiveSection] = useState<string>('resumo')
 
   if (!call) return null
@@ -854,6 +877,17 @@ function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, isAn
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* Delete Button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20"
+                  onClick={() => onDelete(call.id, clientName)}
+                  title="Excluir call"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
 
                 {/* Score Circle */}
                 {hasAnalysis && (
