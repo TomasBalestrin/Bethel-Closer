@@ -177,7 +177,7 @@ export default function NotificationsPage() {
 
       if (error) {
         // Table might not exist, just invalidate to regenerate
-        console.warn('Notifications table not available')
+        // Notifications table might not exist yet - non-critical
       }
       return id
     },
@@ -198,7 +198,7 @@ export default function NotificationsPage() {
         .eq('read', false)
 
       if (error) {
-        console.warn('Notifications table not available')
+        // Notifications table might not exist yet - non-critical
       }
     },
     onSuccess: () => {
@@ -215,7 +215,7 @@ export default function NotificationsPage() {
         .eq('id', id)
 
       if (error) {
-        console.warn('Notifications table not available')
+        // Notifications table might not exist yet - non-critical
       }
       return id
     },

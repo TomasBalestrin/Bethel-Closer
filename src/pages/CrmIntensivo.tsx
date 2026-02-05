@@ -74,7 +74,7 @@ import { ptBR } from 'date-fns/locale'
 // Schemas
 const leadSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
-  phone: z.string().optional(),
+  phone: z.string().optional().refine(v => !v || v.replace(/\D/g, '').length >= 10, 'Telefone inválido (mín. 10 dígitos)'),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   company: z.string().optional(),
   notes: z.string().optional()
