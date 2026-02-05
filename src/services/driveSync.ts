@@ -116,10 +116,11 @@ async function getImportedFileIds(profileId: string): Promise<Set<string>> {
     return new Set()
   }
 
+  // Get ALL calls with Drive URLs (not just for this user) to prevent reimporting
+  // This is more reliable because if the closer_id was wrong before, we still catch duplicates
   const { data, error } = await supabase
     .from('calls')
     .select('recording_url')
-    .eq('closer_id', profileId)
     .like('recording_url', 'drive://%')
 
   if (error) {
@@ -135,7 +136,7 @@ async function getImportedFileIds(profileId: string): Promise<Set<string>> {
     }
   })
 
-  console.log('[DriveSync] Found', ids.size, 'already imported files')
+  console.log('[DriveSync] Found', ids.size, 'already imported Drive files')
   return ids
 }
 
@@ -370,6 +371,19 @@ export async function syncFromDrive(
           continue
         }
 
+        // Double-check: verify this file hasn't been imported yet (in case RLS hid it earlier)
+        const driveUrl = `drive://${file.id}`
+        const { data: existing } = await supabase
+          .from('calls')
+          .select('id')
+          .eq('recording_url', driveUrl)
+          .maybeSingle()
+
+        if (existing) {
+          console.log('[DriveSync] Skipping already imported file:', file.name)
+          continue
+        }
+
         // Create call record
         const { data: callData, error: insertError } = await supabase
           .from('calls')
@@ -378,13 +392,18 @@ export async function syncFromDrive(
             scheduled_at: file.modifiedTime || new Date().toISOString(),
             status: 'completed',
             notes: content,
-            recording_url: `drive://${file.id}`,
+            recording_url: driveUrl,
             ai_analysis: { drive_file_id: file.id, drive_file_name: file.name, result_status: 'pendente' }
           })
           .select()
           .single()
 
         if (insertError) {
+          // Check if it's a duplicate error
+          if (insertError.message?.includes('duplicate') || insertError.code === '23505') {
+            console.log('[DriveSync] Duplicate detected for:', file.name)
+            continue
+          }
           result.errors.push({
             fileName: file.name,
             error: 'Falha ao salvar no banco de dados',
