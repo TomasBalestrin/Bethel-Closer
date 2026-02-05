@@ -1,4 +1,4 @@
-import { authorize, authorizeSilent, listRecentFiles, downloadFileContent, autoDetectFolder, hasValidToken } from './googleDrive'
+import { authorize, authorizeSilent, listRecentFiles, downloadFileContent, autoDetectFolder } from './googleDrive'
 import { supabase } from './supabase'
 import { analyzeCallTranscript } from './openai'
 import type { CallResultStatus } from '@/types'
