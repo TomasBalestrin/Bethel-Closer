@@ -658,9 +658,21 @@ function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProp
   const statusBadge = RESULT_STATUS_BADGES[resultStatus]
   const level = hasAnalysis ? getLevelFromScore(score) : null
 
+  // Get client name: prefer client, then AI-extracted nome_lead, then clean file name
+  const nomeLead = analysis?.identificacao?.nome_lead
+  const driveFileName = analysis?.drive_file_name as string | undefined
+
+  // Extract a readable name from Drive file (e.g., "urd-tdzg-amp (2026-02-05 09:01 GMT-3) - Transcript" → cleaner format)
+  const cleanDriveFileName = driveFileName
+    ? driveFileName
+        .replace(/ - Transcript$/i, '')  // Remove "- Transcript" suffix
+        .replace(/\s*\([^)]+\)\s*$/, '') // Remove date/time in parentheses at the end
+        .trim() || driveFileName
+    : null
+
   const clientName = call.client?.name ||
-    analysis?.identificacao?.nome_lead ||
-    (analysis?.drive_file_name as string) ||
+    (nomeLead && nomeLead !== 'nao_informado' ? nomeLead : null) ||
+    cleanDriveFileName ||
     'Call sem nome'
   const product = analysis?.identificacao?.produto_ofertado
   const niche = analysis?.dados_extraidos?.nicho_profissao
@@ -776,8 +788,16 @@ function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, isAn
   const score = analysis?.nota_geral || 0
   const resultStatus = getResultStatus(call)
 
+  // Get client name: prefer client, then AI-extracted nome_lead, then clean file name
+  const nomeLead = analysis?.identificacao?.nome_lead
+  const driveFileName = analysis?.drive_file_name as string | undefined
+  const cleanDriveFileName = driveFileName
+    ? driveFileName.replace(/ - Transcript$/i, '').replace(/\s*\([^)]+\)\s*$/, '').trim() || driveFileName
+    : null
+
   const clientName = call.client?.name ||
-    analysis?.identificacao?.nome_lead ||
+    (nomeLead && nomeLead !== 'nao_informado' ? nomeLead : null) ||
+    cleanDriveFileName ||
     'Call'
 
   const sections = [
