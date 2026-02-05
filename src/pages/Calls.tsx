@@ -48,7 +48,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
-import { syncFromDrive, connectDrive, trySilentSync, isDriveConnected, getDriveConfig, disconnectDrive, deriveResultStatus } from '@/services/driveSync'
+import { syncFromDrive, connectDrive, trySilentSync, isDriveConnected, getDriveConfig, deriveResultStatus } from '@/services/driveSync'
 import type { SyncProgress } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
 import { formatDate } from '@/lib/utils'
