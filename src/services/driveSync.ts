@@ -35,13 +35,21 @@ export interface DriveConfig {
   lastSync: string | null
   connectedAt: string | null
   fileType: string | null    // MIME type filter, e.g., 'application/vnd.google-apps.document'
-  namePattern: string | null // Name must contain this string
+  namePattern: string | null // DEPRECATED — kept for migration
+  namePatterns: string[]     // Wildcard patterns: "Transcript", "Transcrição*", "*call*"
 }
 
 function getConfig(): DriveConfig {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      // Migrate old single namePattern → namePatterns array
+      if (!parsed.namePatterns) {
+        parsed.namePatterns = parsed.namePattern ? [parsed.namePattern] : []
+      }
+      return parsed
+    }
   } catch {
     // corrupt data
   }
@@ -52,7 +60,8 @@ function getConfig(): DriveConfig {
     lastSync: null,
     connectedAt: null,
     fileType: null,
-    namePattern: null
+    namePattern: null,
+    namePatterns: []
   }
 }
 
@@ -169,6 +178,47 @@ export async function trySilentSync(
   return syncFromDrive(closerId, onProgress, token)
 }
 
+// ── Wildcard pattern matching ──
+
+/**
+ * Match filename against a wildcard pattern (case-insensitive).
+ * - "Transcript"    → filename contains "Transcript"
+ * - "Transcrição*"  → filename contains something starting with "Transcrição"
+ * - "*call*"        → filename contains "call"
+ * - "*Transcript"   → filename ends with "Transcript"
+ */
+export function matchesPattern(fileName: string, pattern: string): boolean {
+  const p = pattern.trim()
+  if (!p) return true
+
+  // Convert wildcard pattern to regex
+  // Escape regex special chars except *
+  const escaped = p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  // Replace * with .*
+  const regexStr = escaped.replace(/\*/g, '.*')
+
+  // If no wildcards, default to "contains" behavior
+  const hasWildcard = p.includes('*')
+  const finalRegex = hasWildcard ? `^${regexStr}$` : regexStr
+
+  try {
+    const re = new RegExp(finalRegex, 'i')
+    return re.test(fileName)
+  } catch {
+    // Fallback to simple includes
+    return fileName.toLowerCase().includes(p.toLowerCase())
+  }
+}
+
+/**
+ * Check if a filename matches ANY of the given patterns.
+ * Empty patterns array = match all files.
+ */
+export function matchesAnyPattern(fileName: string, patterns: string[]): boolean {
+  if (!patterns || patterns.length === 0) return true
+  return patterns.some(p => matchesPattern(fileName, p))
+}
+
 // ── List files from configured folder with config filters ──
 
 export async function listConfiguredFiles(
@@ -178,12 +228,14 @@ export async function listConfiguredFiles(
   const config = getConfig()
   if (!config.folderId) return []
 
+  // Don't send nameContains to API — filter client-side for multi-pattern + wildcard support
   const options: ListFilesOptions = {
     folderId: config.folderId,
     mimeType: config.fileType || undefined,
-    nameContains: config.namePattern || undefined,
     ...overrides
   }
+  // Remove nameContains from overrides if present — we filter client-side
+  delete options.nameContains
 
   const result = await listFilesInFolder(token, options)
 
@@ -194,6 +246,12 @@ export async function listConfiguredFiles(
     const more = await listFilesInFolder(token, { ...options, pageToken: nextToken })
     allFiles = [...allFiles, ...more.files]
     nextToken = more.nextPageToken
+  }
+
+  // Apply multi-pattern filtering client-side
+  const patterns = config.namePatterns
+  if (patterns && patterns.length > 0) {
+    allFiles = allFiles.filter(f => matchesAnyPattern(f.name, patterns))
   }
 
   return allFiles

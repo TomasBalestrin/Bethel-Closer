@@ -22,7 +22,9 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
-  Folder
+  Folder,
+  Plus,
+  HelpCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -145,7 +147,12 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
   // Normalize empty/null fileType to 'all' for Select component (Radix doesn't accept empty string)
   const fileTypeForSelect = fileType || 'all'
   const setFileTypeFromSelect = (v: string) => setFileType(v === 'all' ? '' : v)
-  const [namePattern, setNamePattern] = useState(config.namePattern || '')
+  const [namePatterns, setNamePatterns] = useState<string[]>(config.namePatterns || [])
+  const [patternInput, setPatternInput] = useState('')
+
+  // Sample files from the selected folder (for showing examples)
+  const [sampleFiles, setSampleFiles] = useState<DriveFile[]>([])
+  const [loadingSamples, setLoadingSamples] = useState(false)
 
   // Sync state
   const [isSyncing, setIsSyncing] = useState(false)
@@ -264,9 +271,26 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     }
   }
 
-  const handleConfirmFolder = () => {
+  const handleConfirmFolder = async () => {
     if (!selectedFolder) return
     setStep('config')
+
+    // Load sample files from the selected folder
+    if (token && !loadingSamples) {
+      setLoadingSamples(true)
+      try {
+        const { files } = await drive.listFilesInFolder(token, {
+          folderId: selectedFolder.id,
+          mimeType: fileType || undefined,
+          pageSize: 20
+        })
+        setSampleFiles(files)
+      } catch {
+        // Non-critical — just won't show samples
+      } finally {
+        setLoadingSamples(false)
+      }
+    }
   }
 
   const handleSaveConfig = () => {
@@ -278,7 +302,8 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
       connected: true,
       connectedAt: new Date().toISOString(),
       fileType: fileType || null,
-      namePattern: namePattern.trim() || null
+      namePattern: null,
+      namePatterns
     })
 
     setStep('conectado')
@@ -374,10 +399,26 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
   const handleUpdateSettings = () => {
     sync.updateDriveConfig({
       fileType: fileType || null,
-      namePattern: namePattern.trim() || null
+      namePattern: null,
+      namePatterns
     })
     setShowSettings(false)
     toast.success('Configurações salvas!')
+  }
+
+  const addPattern = (pattern: string) => {
+    const p = pattern.trim()
+    if (!p) return
+    if (namePatterns.includes(p)) {
+      toast.error('Padrão já adicionado')
+      return
+    }
+    setNamePatterns(prev => [...prev, p])
+    setPatternInput('')
+  }
+
+  const removePattern = (pattern: string) => {
+    setNamePatterns(prev => prev.filter(p => p !== pattern))
   }
 
   const toggleErrorDetail = (idx: number) => {
@@ -642,17 +683,15 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                   <p className="text-xs text-muted-foreground">Selecione o formato das suas transcrições</p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Padrão de nome (opcional)</Label>
-                  <Input
-                    placeholder="Ex: Transcript, Transcrição, Call..."
-                    value={namePattern}
-                    onChange={(e) => setNamePattern(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Filtrar apenas arquivos cujo nome contenha este texto. Deixe vazio para importar todos.
-                  </p>
-                </div>
+                <NamePatternsEditor
+                  patterns={namePatterns}
+                  input={patternInput}
+                  onInputChange={setPatternInput}
+                  onAdd={addPattern}
+                  onRemove={removePattern}
+                  sampleFiles={sampleFiles}
+                  loadingSamples={loadingSamples}
+                />
               </div>
 
               <div className="flex gap-3">
@@ -683,7 +722,7 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                       Pasta: {currentConfig.folderName || '(nenhuma)'}
                       {' · '}
                       {MIME_LABELS[currentConfig.fileType || 'all'] || currentConfig.fileType || 'Todos os tipos'}
-                      {currentConfig.namePattern && ` · Padrão: "${currentConfig.namePattern}"`}
+                      {currentConfig.namePatterns?.length > 0 && ` · ${currentConfig.namePatterns.length} padrão(ões)`}
                     </p>
                   </div>
                 </div>
@@ -906,14 +945,16 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Padrão de nome (opcional)</Label>
-              <Input
-                placeholder="Ex: Transcript, Call..."
-                value={namePattern}
-                onChange={(e) => setNamePattern(e.target.value)}
-              />
-            </div>
+            <NamePatternsEditor
+              patterns={namePatterns}
+              input={patternInput}
+              onInputChange={setPatternInput}
+              onAdd={addPattern}
+              onRemove={removePattern}
+              sampleFiles={[]}
+              loadingSamples={false}
+              compact
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSettings(false)}>Cancelar</Button>
@@ -957,6 +998,163 @@ function FolderItem({
         <CheckCircle2 className="h-4 w-4 text-blue-600 ml-auto" />
       )}
     </button>
+  )
+}
+
+// Name patterns editor with tags/chips, wildcard support, suggestions
+const SUGGESTED_PATTERNS = ['*Transcript', '*Transcrição*', '*Reunião*', '*Call*', '*transcription*']
+
+function NamePatternsEditor({
+  patterns,
+  input,
+  onInputChange,
+  onAdd,
+  onRemove,
+  sampleFiles,
+  loadingSamples,
+  compact
+}: {
+  patterns: string[]
+  input: string
+  onInputChange: (v: string) => void
+  onAdd: (p: string) => void
+  onRemove: (p: string) => void
+  sampleFiles: DriveFile[]
+  loadingSamples: boolean
+  compact?: boolean
+}) {
+  const [showHelp, setShowHelp] = useState(false)
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onAdd(input)
+    }
+  }
+
+  // Filter suggestions to only show ones not already added
+  const availableSuggestions = SUGGESTED_PATTERNS.filter(s => !patterns.includes(s))
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Label>Padrões de Nome</Label>
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => setShowHelp(!showHelp)}
+          title="Ajuda sobre padrões"
+        >
+          <HelpCircle className="h-4 w-4" />
+        </button>
+      </div>
+
+      {showHelp && (
+        <div className="text-xs text-muted-foreground bg-muted rounded-lg p-3 space-y-1">
+          <p className="font-medium text-foreground">Como funcionam os padrões:</p>
+          <p><code className="bg-background px-1 rounded">Transcript</code> — nome contém "Transcript"</p>
+          <p><code className="bg-background px-1 rounded">*Transcript</code> — nome termina com "Transcript"</p>
+          <p><code className="bg-background px-1 rounded">Transcrição*</code> — nome começa com "Transcrição"</p>
+          <p><code className="bg-background px-1 rounded">*call*</code> — nome contém "call"</p>
+          <p className="pt-1">Deixe vazio para importar todos os arquivos da pasta.</p>
+        </div>
+      )}
+
+      {/* Current patterns as chips */}
+      {patterns.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {patterns.map(p => (
+            <span
+              key={p}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-sm border border-blue-200 dark:border-blue-800"
+            >
+              <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+              {p}
+              <button
+                type="button"
+                onClick={() => onRemove(p)}
+                className="ml-0.5 hover:text-blue-600 dark:hover:text-blue-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Sample file names from folder */}
+      {!compact && sampleFiles.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Exemplos de arquivos na pasta:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {sampleFiles.slice(0, 5).map(f => (
+              <button
+                key={f.id}
+                type="button"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 text-xs text-muted-foreground hover:text-foreground border border-border transition-colors text-left max-w-full"
+                onClick={() => onAdd(`*${f.name.split(' ').slice(-1)[0]}*`)}
+                title={`Usar parte do nome: ${f.name}`}
+              >
+                <FileText className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{f.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {!compact && loadingSamples && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Carregando exemplos...
+        </div>
+      )}
+
+      {/* Input + add button */}
+      <div className="flex gap-2">
+        <Input
+          placeholder="Ex: Transcrição* ou *call*"
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="flex-1"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => onAdd(input)}
+          disabled={!input.trim()}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Suggestions */}
+      {availableSuggestions.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Sugestões:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {availableSuggestions.map(s => (
+              <button
+                key={s}
+                type="button"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-muted hover:bg-muted/80 text-xs text-muted-foreground hover:text-foreground border border-border transition-colors"
+                onClick={() => onAdd(s)}
+              >
+                <Plus className="h-3 w-3" />
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {patterns.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Nenhum padrão definido — todos os arquivos da pasta serão importados.
+        </p>
+      )}
+    </div>
   )
 }
 
