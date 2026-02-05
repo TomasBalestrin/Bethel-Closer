@@ -697,7 +697,7 @@ Se faltar qualquer item, corrija antes de responder.`
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function analyzeCallTranscript(transcript: string): Promise<Record<string, any>> {
   if (!OPENAI_API_KEY) {
-    throw new Error('Chave da API OpenAI não configurada. Adicione VITE_OPENAI_API_KEY no .env')
+    throw new Error('Chave da API OpenAI não configurada. Adicione VITE_OPENAI_API_KEY no ambiente Vercel.')
   }
 
   const messages: ChatMessage[] = [
@@ -705,23 +705,43 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
     { role: 'user', content: `TRANSCRICAO:\n\n${transcript}` }
   ]
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages,
-      temperature: 0.2,
-      max_tokens: 16384
+  let response: Response
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages,
+        temperature: 0.2,
+        max_tokens: 16384
+      })
     })
-  })
+  } catch (networkError) {
+    // Network error (CORS, timeout, no internet, etc.)
+    console.error('OpenAI fetch failed:', networkError)
+    throw new Error(`Erro de conexão com OpenAI: ${networkError instanceof Error ? networkError.message : 'Verifique sua conexão e a chave API'}`)
+  }
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || 'Erro ao analisar call com IA')
+    let errorMessage = `Erro ${response.status} da OpenAI`
+    try {
+      const error = await response.json()
+      errorMessage = error.error?.message || errorMessage
+      if (response.status === 401) {
+        errorMessage = 'Chave API inválida ou expirada. Verifique VITE_OPENAI_API_KEY.'
+      } else if (response.status === 429) {
+        errorMessage = 'Limite de requisições excedido ou créditos esgotados na OpenAI.'
+      } else if (response.status === 500) {
+        errorMessage = 'Erro interno da OpenAI. Tente novamente em alguns minutos.'
+      }
+    } catch {
+      // JSON parse failed
+    }
+    throw new Error(errorMessage)
   }
 
   const data = await response.json()
