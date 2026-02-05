@@ -730,7 +730,8 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
         model: 'gpt-4o',
         messages,
         temperature: 0.2,
-        max_tokens: 16384
+        max_tokens: 16384,
+        response_format: { type: 'json_object' }
       }),
       signal: controller.signal
     })
@@ -777,11 +778,27 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
   }
 
   console.log('[OpenAI] Received response, content length:', content.length)
+  console.log('[OpenAI] Raw content preview:', content.substring(0, 200))
 
-  // Clean possible markdown wrapping
+  // Try to extract JSON from the response
   let jsonStr = content.trim()
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+  // Remove markdown code blocks (various formats)
+  // Format: ```json ... ``` or ``` ... ```
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim()
+    console.log('[OpenAI] Extracted from code block')
+  }
+
+  // Try to find JSON object in the response (starts with { and ends with })
+  if (!jsonStr.startsWith('{')) {
+    const jsonStartIndex = jsonStr.indexOf('{')
+    const jsonEndIndex = jsonStr.lastIndexOf('}')
+    if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+      jsonStr = jsonStr.substring(jsonStartIndex, jsonEndIndex + 1)
+      console.log('[OpenAI] Extracted JSON object from text')
+    }
   }
 
   try {
@@ -790,8 +807,23 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
     return parsed
   } catch (parseError) {
     console.error('[OpenAI] JSON parse failed:', parseError)
-    console.error('[OpenAI] Raw content (first 500 chars):', jsonStr.substring(0, 500))
-    throw new Error('Falha ao interpretar resposta da IA como JSON')
+    console.error('[OpenAI] Cleaned content (first 1000 chars):', jsonStr.substring(0, 1000))
+    console.error('[OpenAI] Cleaned content (last 500 chars):', jsonStr.substring(jsonStr.length - 500))
+
+    // Try one more time: maybe there are control characters or BOM
+    try {
+      // Remove BOM and control characters
+      const cleanedStr = jsonStr
+        .replace(/^\uFEFF/, '') // BOM
+        .replace(/[\x00-\x1F\x7F]/g, ' ') // Control chars except space
+        .replace(/\s+/g, ' ') // Multiple spaces to single
+      const parsed2 = JSON.parse(cleanedStr)
+      console.log('[OpenAI] Successfully parsed after cleaning control chars')
+      return parsed2
+    } catch {
+      // Give up
+      throw new Error('Falha ao interpretar resposta da IA como JSON. Verifique o console para detalhes.')
+    }
   }
 }
 
