@@ -119,6 +119,9 @@ const MIME_LABELS: Record<string, string> = {
   'all': 'Todos os tipos'
 }
 
+// Data de corte padrão para importação automática (arquivos a partir desta data)
+const DEFAULT_IMPORT_CUTOFF = '2026-02-01T00:00:00.000Z'
+
 function GoogleDriveIntegration({ userId }: { userId?: string }) {
   const googleConfigured = drive.isConfigured()
   const config = sync.getDriveConfig()
@@ -300,7 +303,7 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
       folderId: selectedFolder.id,
       folderName: selectedFolder.name,
       connected: true,
-      connectedAt: new Date().toISOString(),
+      connectedAt: DEFAULT_IMPORT_CUTOFF,
       fileType: fileType || null,
       namePattern: null,
       namePatterns
