@@ -74,8 +74,17 @@ async function fetchOrCreateProfile(sessionUser: { id: string; email?: string; c
 }
 
 function buildUser(sessionUser: { id: string; email?: string; created_at: string }, profile: Record<string, unknown> | null): User {
+  // CRITICAL: profileId is used for all data relationships (calls, clients, etc.)
+  // The auth.users.id (sessionUser.id) is ONLY for authentication
+  const profileId = (profile?.id as string) || ''
+
+  if (!profileId) {
+    console.warn('[AuthStore] No profile ID found - sync operations will fail!')
+  }
+
   return {
-    id: sessionUser.id,
+    id: sessionUser.id,           // auth.users.id - for authentication only
+    profileId: profileId,         // profiles.id - for data relationships
     email: sessionUser.email || '',
     name: (profile?.name as string) || sessionUser.email?.split('@')[0] || '',
     avatar_url: (profile?.avatar_url as string) || undefined,

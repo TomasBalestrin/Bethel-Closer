@@ -27,7 +27,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
-  Trash2
+  Trash2,
+  AlertCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -152,12 +153,17 @@ export default function CallsPage() {
   const { data: calls, isLoading } = useQuery({
     queryKey: ['calls-analysis'],
     queryFn: async () => {
+      console.log('[Calls] Fetching calls from database...')
       const { data, error } = await supabase
         .from('calls')
         .select(`*, client:clients(id, name, email, phone, company)`)
         .order('scheduled_at', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('[Calls] Error fetching calls:', error)
+        throw error
+      }
+      console.log('[Calls] Fetched', data?.length || 0, 'calls')
       return data as (Call & { client?: Client })[]
     },
     refetchInterval: 60000 // Auto-refresh every 60s for near real-time
@@ -288,7 +294,7 @@ export default function CallsPage() {
 
   // Manual sync: connects Drive (with popup if first time) + syncs
   const handleSync = useCallback(async () => {
-    if (!user?.id || isSyncing) return
+    if (!user?.profileId || isSyncing) return
 
     try {
       if (!isDriveConnected()) {
@@ -302,13 +308,13 @@ export default function CallsPage() {
         }
 
         // Now sync with the obtained token
-        const result = await syncFromDrive(user.id, (progress) => {
+        const result = await syncFromDrive(user.profileId, (progress) => {
           setSyncProgress(progress)
         }, token)
         handleSyncResult(result)
       } else {
         // Already connected: regular sync
-        const result = await syncFromDrive(user.id, (progress) => {
+        const result = await syncFromDrive(user.profileId, (progress) => {
           setSyncProgress(progress)
         })
         handleSyncResult(result)
@@ -317,16 +323,16 @@ export default function CallsPage() {
       setSyncProgress({ status: 'error', message: error instanceof Error ? error.message : 'Erro na sincronização' })
       setTimeout(() => setSyncProgress(null), 5000)
     }
-  }, [user?.id, isSyncing, handleSyncResult])
+  }, [user?.profileId, isSyncing, handleSyncResult])
 
   // Auto-sync on page load (silent, no popup)
   useEffect(() => {
-    if (!user?.id || !isDriveConnected()) return
+    if (!user?.profileId || !isDriveConnected()) return
 
     let cancelled = false
 
     const autoSync = async () => {
-      const result = await trySilentSync(user.id, (progress) => {
+      const result = await trySilentSync(user.profileId, (progress) => {
         if (!cancelled) setSyncProgress(progress)
       })
       if (result && !cancelled) {
@@ -348,7 +354,7 @@ export default function CallsPage() {
       clearTimeout(initialTimer)
       clearInterval(intervalTimer)
     }
-  }, [user?.id, handleSyncResult])
+  }, [user?.profileId, handleSyncResult])
 
   const handleAnalyzeCall = async (call: Call & { client?: Client }) => {
     if (!call.notes) {
@@ -404,14 +410,22 @@ export default function CallsPage() {
   }
 
   const handleDeleteCall = async (callId: string, callName: string) => {
+    console.log('[Calls] Delete requested for:', callId, callName)
     const confirmed = window.confirm(`Tem certeza que deseja excluir a call "${callName}"?\n\nEsta ação não pode ser desfeita.`)
-    if (!confirmed) return
+    if (!confirmed) {
+      console.log('[Calls] Delete cancelled by user')
+      return
+    }
 
     try {
-      const { error } = await supabase
+      console.log('[Calls] Deleting call:', callId)
+      const { error, count } = await supabase
         .from('calls')
         .delete()
         .eq('id', callId)
+        .select()
+
+      console.log('[Calls] Delete result - error:', error, 'count:', count)
 
       if (error) throw error
 
@@ -419,6 +433,7 @@ export default function CallsPage() {
       setSelectedCall(null)
       toast.success('Call excluída com sucesso!')
     } catch (error) {
+      console.error('[Calls] Delete error:', error)
       toast.error(error instanceof Error ? error.message : 'Erro ao excluir call')
     }
   }
@@ -465,6 +480,31 @@ export default function CallsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Sync Warning Banner */}
+      {isSyncing && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              Sincronização em andamento
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              Mantenha esta aba aberta e em primeiro plano. A análise pode demorar 1-2 minutos por arquivo.
+            </p>
+          </div>
+          {syncProgress && (
+            <div className="text-right shrink-0">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                {syncProgress.current || 0}/{syncProgress.total || 0}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {syncProgress.status === 'analyzing' ? 'Analisando...' : syncProgress.status}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Status Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>

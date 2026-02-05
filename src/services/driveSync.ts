@@ -108,12 +108,25 @@ export function disconnectDrive(): void {
 
 // ── Already-imported file tracking ──
 
-async function getImportedFileIds(closerId: string): Promise<Set<string>> {
-  const { data } = await supabase
+async function getImportedFileIds(profileId: string): Promise<Set<string>> {
+  console.log('[DriveSync] Checking imported files for profileId:', profileId)
+
+  if (!profileId) {
+    console.error('[DriveSync] No profileId provided - cannot check imported files')
+    return new Set()
+  }
+
+  const { data, error } = await supabase
     .from('calls')
     .select('recording_url')
-    .eq('closer_id', closerId)
+    .eq('closer_id', profileId)
     .like('recording_url', 'drive://%')
+
+  if (error) {
+    console.error('[DriveSync] Failed to get imported file IDs:', error)
+    // Return empty set to allow sync to continue (will re-import duplicates worst case)
+    return new Set()
+  }
 
   const ids = new Set<string>()
   data?.forEach(call => {
@@ -121,6 +134,8 @@ async function getImportedFileIds(closerId: string): Promise<Set<string>> {
       ids.add(call.recording_url.replace('drive://', ''))
     }
   })
+
+  console.log('[DriveSync] Found', ids.size, 'already imported files')
   return ids
 }
 
