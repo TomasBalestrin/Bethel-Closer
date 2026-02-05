@@ -38,40 +38,52 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
 export default function ReportsPage() {
   const [period, setPeriod] = useState('month')
 
-  // Fetch team performance data
+  // Fetch team performance data (batched: 4 queries total instead of N*3)
   const { data: teamStats } = useQuery({
     queryKey: ['team-stats', period],
     queryFn: async () => {
-      const { data: closers } = await supabase
-        .from('profiles')
-        .select('id, name, role')
-        .in('role', ['closer', 'lider'])
+      const [closersResult, clientsResult, callsResult] = await Promise.all([
+        supabase.from('profiles').select('id, name, role').in('role', ['closer', 'lider']),
+        supabase.from('clients').select('closer_id, status, sale_value'),
+        supabase.from('calls').select('closer_id')
+      ])
 
-      // Get stats for each closer
-      const stats = await Promise.all(
-        (closers || []).map(async (closer) => {
-          const [clientsResult, callsResult, salesResult] = await Promise.all([
-            supabase.from('clients').select('*', { count: 'exact' }).eq('closer_id', closer.id),
-            supabase.from('calls').select('*', { count: 'exact' }).eq('closer_id', closer.id),
-            supabase.from('clients').select('sale_value').eq('closer_id', closer.id).eq('status', 'closed_won')
-          ])
+      if (closersResult.error) throw closersResult.error
+      const closers = closersResult.data || []
+      const allClients = clientsResult.data || []
+      const allCalls = callsResult.data || []
 
-          const totalRevenue = salesResult.data?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
+      // Pre-aggregate by closer_id
+      const clientsByCloser = new Map<string, { total: number; wonCount: number; revenue: number }>()
+      for (const c of allClients) {
+        const entry = clientsByCloser.get(c.closer_id) || { total: 0, wonCount: 0, revenue: 0 }
+        entry.total++
+        if (c.status === 'closed_won') {
+          entry.wonCount++
+          entry.revenue += c.sale_value || 0
+        }
+        clientsByCloser.set(c.closer_id, entry)
+      }
 
-          return {
-            id: closer.id,
-            name: closer.name,
-            role: closer.role,
-            clients: clientsResult.count || 0,
-            calls: callsResult.count || 0,
-            sales: salesResult.data?.length || 0,
-            revenue: totalRevenue,
-            conversion: callsResult.count ? ((salesResult.data?.length || 0) / callsResult.count * 100).toFixed(1) : 0
-          }
-        })
-      )
+      const callsByCloser = new Map<string, number>()
+      for (const c of allCalls) {
+        callsByCloser.set(c.closer_id, (callsByCloser.get(c.closer_id) || 0) + 1)
+      }
 
-      return stats
+      return closers.map(closer => {
+        const stats = clientsByCloser.get(closer.id) || { total: 0, wonCount: 0, revenue: 0 }
+        const callCount = callsByCloser.get(closer.id) || 0
+        return {
+          id: closer.id,
+          name: closer.name,
+          role: closer.role,
+          clients: stats.total,
+          calls: callCount,
+          sales: stats.wonCount,
+          revenue: stats.revenue,
+          conversion: callCount ? ((stats.wonCount / callCount) * 100).toFixed(1) : '0'
+        }
+      })
     }
   })
 
@@ -99,6 +111,9 @@ export default function ReportsPage() {
             .gte('created_at', startISO).lte('created_at', endISO)
         ])
 
+        if (callsResult.error) throw callsResult.error
+        if (salesResult.error) throw salesResult.error
+
         const revenue = salesResult.data?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
 
         months.push({
@@ -117,9 +132,11 @@ export default function ReportsPage() {
   const { data: statusDistribution } = useQuery({
     queryKey: ['status-distribution'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('clients')
         .select('status')
+
+      if (error) throw error
 
       const counts: Record<string, number> = {}
       data?.forEach(client => {

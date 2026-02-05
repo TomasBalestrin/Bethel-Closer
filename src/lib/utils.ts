@@ -41,6 +41,16 @@ export function formatPhoneNumber(phone: string): string {
   return phone
 }
 
+export function isValidPhone(phone: string): boolean {
+  const cleaned = phone.replace(/\D/g, '')
+  // Brazilian phone: 10-11 digits (with area code), or 12-13 with country code (55)
+  return cleaned.length >= 10 && cleaned.length <= 13
+}
+
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
 export function getInitials(name: string): string {
   return name
     .split(' ')

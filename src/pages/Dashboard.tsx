@@ -215,6 +215,10 @@ export default function DashboardPage() {
         allCallsQuery
       ])
 
+      if (clientsResult.error) throw clientsResult.error
+      if (callsResult.error) throw callsResult.error
+      if (salesResult.error) throw salesResult.error
+
       const clients = clientsResult.data || []
       const calls = callsResult.data || []
       const sales = salesResult.data || []
@@ -288,7 +292,7 @@ export default function DashboardPage() {
           .maybeSingle()
 
         if (result.error) {
-          console.warn('Monthly goal fetch error:', result.error.message)
+          // Table might not exist yet - silently return null
           return null
         }
       }

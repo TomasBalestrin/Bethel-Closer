@@ -93,7 +93,9 @@ function GlobalSearch() {
           scheduled_at: c.scheduled_at as string
         }))
       setResults({ clients: clientsRes.data || [], calls })
-    } catch { /* ignore */ }
+    } catch {
+      // Search errors are non-critical - fail silently
+    }
     setLoading(false)
   }, [])
 

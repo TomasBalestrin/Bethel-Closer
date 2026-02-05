@@ -63,11 +63,11 @@ async function fetchOrCreateProfile(sessionUser: { id: string; email?: string; c
         profile = created || newProfile
       } catch {
         // Profile creation failed (might be RLS or trigger conflict)
-        console.warn('Could not create profile, using defaults')
+        // Profile creation failed (RLS or trigger conflict) - using defaults
       }
     }
   } catch (e) {
-    console.warn('Could not fetch profile:', e)
+    // Profile fetch failed - will use defaults
   }
 
   return profile
@@ -106,7 +106,6 @@ export const useAuthStore = create<AuthState>()(
           const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
           if (sessionError) {
-            console.error('Session error:', sessionError)
             set({
               user: null,
               profile: null,
@@ -161,7 +160,6 @@ export const useAuthStore = create<AuthState>()(
             })
           }
         } catch (error) {
-          console.error('Failed to initialize auth:', error)
           set({
             isLoading: false,
             isInitialized: true
@@ -201,8 +199,8 @@ export const useAuthStore = create<AuthState>()(
                 email,
                 role: 'closer'
               })
-          } catch (profileError) {
-            console.error('Failed to create profile:', profileError)
+          } catch {
+            // Profile creation might fail if trigger already created it
           }
         }
       },

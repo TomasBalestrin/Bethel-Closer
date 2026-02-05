@@ -537,6 +537,17 @@ function CreateCloserDialog({
       return
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email.trim())) {
+      toast.error('Formato de email inválido')
+      return
+    }
+
+    if (phone && phone.replace(/\D/g, '').length < 10) {
+      toast.error('Telefone inválido (mínimo 10 dígitos)')
+      return
+    }
+
     if (password.length < 6) {
       toast.error('A senha deve ter pelo menos 6 caracteres')
       return
@@ -568,7 +579,7 @@ function CreateCloserDialog({
           }, { onConflict: 'user_id' })
 
         if (profileError) {
-          console.warn('Profile upsert warning:', profileError.message)
+          // Profile upsert might fail if trigger already created it
         }
       }
 
