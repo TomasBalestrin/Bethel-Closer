@@ -28,7 +28,8 @@ import {
   ChevronRight,
   Zap,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  MoreVertical
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,13 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
@@ -57,6 +65,8 @@ import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Call, CallResultStatus, CallAnalysisFull, Client } from '@/types'
+import { DateRangePicker, ActiveFiltersChips, MergeCallDialog, type DateRange } from '@/components/calls'
+import { isWithinInterval, parseISO } from 'date-fns'
 
 // ──────────────────────────────────────────────
 // Constants
@@ -140,6 +150,7 @@ function getCheckStatusIcon(status?: string) {
 export default function CallsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('total')
   const [searchQuery, setSearchQuery] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
   const [selectedCall, setSelectedCall] = useState<(Call & { client?: Client }) | null>(null)
   const [showSummary, setShowSummary] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
@@ -203,6 +214,17 @@ export default function CallsPage() {
       list = list.filter(c => c._resultStatus === statusMap[activeTab])
     }
 
+    // Date range filter
+    if (dateRange?.from) {
+      list = list.filter(c => {
+        const callDate = parseISO(c.scheduled_at)
+        if (dateRange.to) {
+          return isWithinInterval(callDate, { start: dateRange.from!, end: dateRange.to })
+        }
+        return callDate >= dateRange.from!
+      })
+    }
+
     // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -216,7 +238,7 @@ export default function CallsPage() {
     }
 
     return list
-  }, [callsWithStatus, activeTab, searchQuery])
+  }, [callsWithStatus, activeTab, searchQuery, dateRange])
 
   // Pagination
   const totalPages = Math.ceil(filteredCalls.length / CALLS_PER_PAGE)
@@ -272,7 +294,14 @@ export default function CallsPage() {
   }, [callsWithStatus])
 
   // Reset page on filter change
-  useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery])
+  useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, dateRange])
+
+  // Clear all filters
+  const handleClearAllFilters = useCallback(() => {
+    setSearchQuery('')
+    setActiveTab('total')
+    setDateRange(undefined)
+  }, [])
 
   // ── Actions ──
 
@@ -532,18 +561,32 @@ export default function CallsPage() {
         </TabsList>
       </Tabs>
 
+      {/* Active Filters Chips */}
+      <ActiveFiltersChips
+        searchQuery={searchQuery}
+        statusFilter={activeTab === 'total' ? 'all' : (activeTab === 'pendentes' ? 'pendente' : activeTab === 'propostas' ? 'proposta' : activeTab === 'vendidas' ? 'vendida' : activeTab === 'perdidas' ? 'perdida' : activeTab as CallResultStatus)}
+        dateRange={dateRange}
+        onClearSearch={() => setSearchQuery('')}
+        onClearStatus={() => setActiveTab('total')}
+        onClearDateRange={() => setDateRange(undefined)}
+        onClearAll={handleClearAllFilters}
+      />
+
       {/* Period Summary (Collapsible) */}
       <Card>
-        <button
-          onClick={() => setShowSummary(!showSummary)}
-          className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors rounded-lg"
-        >
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between p-4">
+          <button
+            onClick={() => setShowSummary(!showSummary)}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <BarChart3 className="h-5 w-5 text-primary" />
             <span className="font-semibold">Resumo do Período</span>
+            {showSummary ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+          <div onClick={(e) => e.stopPropagation()}>
+            <DateRangePicker dateRange={dateRange} onDateRangeChange={setDateRange} />
           </div>
-          {showSummary ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
+        </div>
 
         {showSummary && (
           <CardContent className="pt-0 pb-4 space-y-4">
@@ -664,6 +707,8 @@ export default function CallsPage() {
               isAnalyzing={isAnalyzing === call.id}
               onView={() => setSelectedCall(call)}
               onAnalyze={() => handleAnalyzeCall(call)}
+              onDelete={handleDeleteCall}
+              onCallUpdated={() => queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })}
             />
           ))}
         </div>
@@ -710,9 +755,12 @@ interface CallGridCardProps {
   isAnalyzing?: boolean
   onView: () => void
   onAnalyze: () => void
+  onDelete: (callId: string, callName: string) => void
+  onCallUpdated: () => void
 }
 
-function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProps) {
+function CallGridCard({ call, isAnalyzing, onView, onAnalyze, onDelete, onCallUpdated }: CallGridCardProps) {
+  const [showMergeDialog, setShowMergeDialog] = useState(false)
   const analysis = call.ai_analysis as CallAnalysisFull | undefined
   const hasAnalysis = !!analysis?.nota_geral
   const score = analysis?.nota_geral || 0
@@ -751,7 +799,7 @@ function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProp
       )}
 
       <CardContent className={cn('p-4 space-y-3', !hasAnalysis && 'pt-4')}>
-        {/* Top row: Name + Score */}
+        {/* Top row: Name + Score + Menu */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-base truncate">{clientName}</h3>
@@ -765,18 +813,53 @@ function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProp
             </div>
           </div>
 
-          {hasAnalysis ? (
-            <div className={cn(
-              'flex items-center justify-center w-12 h-12 rounded-full border-2 font-bold text-sm shrink-0',
-              getScoreColor(score)
-            )}>
-              {score}<span className="text-[10px] font-normal">/10</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 border-dashed border-muted-foreground/30 shrink-0">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {hasAnalysis ? (
+              <div className={cn(
+                'flex items-center justify-center w-10 h-10 rounded-full border-2 font-bold text-xs',
+                getScoreColor(score)
+              )}>
+                {score}<span className="text-[8px] font-normal">/10</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center w-10 h-10 rounded-full border-2 border-dashed border-muted-foreground/30">
+                <Clock className="h-3 w-3 text-muted-foreground" />
+              </div>
+            )}
+
+            {/* Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={onView}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Ver detalhes
+                </DropdownMenuItem>
+                {!hasAnalysis && call.notes && (
+                  <DropdownMenuItem onClick={onAnalyze} disabled={isAnalyzing}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {isAnalyzing ? 'Analisando...' : 'Analisar com IA'}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setShowMergeDialog(true)}>
+                  <Target className="h-4 w-4 mr-2" />
+                  Juntar com outra call
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => onDelete(call.id, clientName)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir call
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Date */}
@@ -823,6 +906,17 @@ function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProp
           )}
         </div>
       </CardContent>
+
+      {/* Merge Dialog */}
+      <MergeCallDialog
+        currentCall={call}
+        onMergeComplete={() => {
+          setShowMergeDialog(false)
+          onCallUpdated()
+        }}
+        open={showMergeDialog}
+        onOpenChange={setShowMergeDialog}
+      />
     </Card>
   )
 }
