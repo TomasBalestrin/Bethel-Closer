@@ -93,27 +93,74 @@ function loadGAPI(): Promise<void> {
 }
 
 // ==========================================
-// Auth
+// Auth (with localStorage persistence)
 // ==========================================
+
+const TOKEN_STORAGE_KEY = 'bethel_google_token'
+
+interface StoredToken {
+  token: string
+  expiry: number
+}
 
 let currentAccessToken: string | null = null
 let tokenExpiry: number = 0
+
+function getStoredToken(): string | null {
+  try {
+    const stored = localStorage.getItem(TOKEN_STORAGE_KEY)
+    if (!stored) return null
+    const { token, expiry } = JSON.parse(stored) as StoredToken
+    if (Date.now() < expiry) {
+      currentAccessToken = token
+      tokenExpiry = expiry
+      return token
+    }
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+  } catch {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+  }
+  return null
+}
+
+function storeToken(token: string, expiresIn: number): void {
+  const expiry = Date.now() + (expiresIn - 300) * 1000
+  currentAccessToken = token
+  tokenExpiry = expiry
+  try {
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiry }))
+  } catch {
+    // localStorage full or disabled
+  }
+}
+
+// Restore token on module load
+getStoredToken()
 
 export function isConfigured(): boolean {
   return !!GOOGLE_CLIENT_ID && !!GOOGLE_API_KEY
 }
 
 export function hasValidToken(): boolean {
-  return !!currentAccessToken && Date.now() < tokenExpiry
+  if (currentAccessToken && Date.now() < tokenExpiry) return true
+  return !!getStoredToken()
+}
+
+export function getValidToken(): string | null {
+  if (currentAccessToken && Date.now() < tokenExpiry) return currentAccessToken
+  return getStoredToken()
 }
 
 export function clearToken(): void {
   currentAccessToken = null
   tokenExpiry = 0
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
 export async function authorize(): Promise<string> {
-  if (hasValidToken()) return currentAccessToken!
+  // Check memory first, then localStorage
+  const existingToken = getValidToken()
+  if (existingToken) return existingToken
 
   if (!GOOGLE_CLIENT_ID) {
     throw new Error('VITE_GOOGLE_CLIENT_ID não configurado')
@@ -138,8 +185,7 @@ export async function authorize(): Promise<string> {
           reject(new Error(response.error_description || response.error))
           return
         }
-        currentAccessToken = response.access_token
-        tokenExpiry = Date.now() + (response.expires_in - 300) * 1000
+        storeToken(response.access_token, response.expires_in)
         resolve(response.access_token)
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -152,9 +198,11 @@ export async function authorize(): Promise<string> {
   })
 }
 
-// Try to authorize silently (no popup) using existing Google session
+// Try to authorize silently (no popup) using stored token or existing Google session
 export async function authorizeSilent(): Promise<string | null> {
-  if (hasValidToken()) return currentAccessToken!
+  // First check stored token
+  const storedToken = getValidToken()
+  if (storedToken) return storedToken
 
   if (!GOOGLE_CLIENT_ID) return null
 
@@ -178,8 +226,7 @@ export async function authorizeSilent(): Promise<string | null> {
           resolve(null)
           return
         }
-        currentAccessToken = response.access_token
-        tokenExpiry = Date.now() + (response.expires_in - 300) * 1000
+        storeToken(response.access_token, response.expires_in)
         resolve(response.access_token)
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

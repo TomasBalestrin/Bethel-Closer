@@ -270,9 +270,14 @@ export async function syncFromDrive(
     let token: string | undefined = existingToken
     if (!token) {
       onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
-      // Try silent auth first (no popup) — only show popup if really needed
+      // Try silent auth only (no popup) — if it fails, user needs to reconnect manually
       const silentToken = await authorizeSilent()
-      token = silentToken || await authorize()
+      if (!silentToken) {
+        onProgress?.({ status: 'error', message: 'Sessão expirada. Desconecte e conecte novamente.' })
+        result.errors.push({ fileName: '', error: 'Sessão expirada', detail: 'Clique em Desconectar e conecte novamente', phase: 'other' })
+        return result
+      }
+      token = silentToken
     }
 
     const config = getConfig()
