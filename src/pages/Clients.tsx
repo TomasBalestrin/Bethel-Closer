@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -235,11 +235,24 @@ export default function ClientsPage() {
     queryClient.invalidateQueries({ queryKey: ['client-tags'] })
   }
 
+  // Pre-computed tag lookup map (memoized)
+  const clientTagMap = useMemo(() => {
+    const map = new Map<string, TagType[]>()
+    for (const ct of clientTags) {
+      const tag = tags.find(t => t.id === ct.tag_id)
+      if (tag) {
+        const existing = map.get(ct.client_id) || []
+        existing.push(tag)
+        map.set(ct.client_id, existing)
+      }
+    }
+    return map
+  }, [clientTags, tags])
+
   // Helper to get tags for a specific client
-  const getClientTags = (clientId: string) => {
-    const tagIds = clientTags.filter(ct => ct.client_id === clientId).map(ct => ct.tag_id)
-    return tags.filter(t => tagIds.includes(t.id))
-  }
+  const getClientTags = useCallback((clientId: string) => {
+    return clientTagMap.get(clientId) || []
+  }, [clientTagMap])
 
   const createMutation = useMutation({
     mutationFn: async (data: ClientFormData) => {
@@ -300,12 +313,20 @@ export default function ClientsPage() {
     }
   }
 
-  // Stats
-  const totalClients = clients?.length || 0
-  const leadCount = clients?.filter(c => c.status === 'lead').length || 0
-  const negotiatingCount = clients?.filter(c => c.status === 'negotiating').length || 0
-  const closedWonCount = clients?.filter(c => c.status === 'closed_won').length || 0
-  const totalRevenue = clients?.reduce((sum, c) => sum + (c.sale_value || 0), 0) || 0
+  // Stats (memoized to avoid recalculation on every render)
+  const { totalClients, leadCount, negotiatingCount, closedWonCount, totalRevenue } = useMemo(() => {
+    if (!clients) return { totalClients: 0, leadCount: 0, negotiatingCount: 0, closedWonCount: 0, totalRevenue: 0 }
+    let leads = 0, negotiating = 0, won = 0, revenue = 0
+    for (const c of clients) {
+      if (c.status === 'lead') leads++
+      else if (c.status === 'negotiating') negotiating++
+      if (c.status === 'closed_won') {
+        won++
+        revenue += c.sale_value || 0
+      }
+    }
+    return { totalClients: clients.length, leadCount: leads, negotiatingCount: negotiating, closedWonCount: won, totalRevenue: revenue }
+  }, [clients])
 
   return (
     <div className="space-y-6">

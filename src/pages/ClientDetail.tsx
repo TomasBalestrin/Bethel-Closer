@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   ArrowLeft,
   Phone,
@@ -330,8 +330,15 @@ export default function ClientDetailPage() {
     )
   }
 
-  const completedCalls = calls?.filter(c => c.status === 'completed').length || 0
-  const scheduledCalls = calls?.filter(c => c.status === 'scheduled').length || 0
+  const { completedCalls, scheduledCalls } = useMemo(() => {
+    if (!calls) return { completedCalls: 0, scheduledCalls: 0 }
+    let completed = 0, scheduled = 0
+    for (const c of calls) {
+      if (c.status === 'completed') completed++
+      else if (c.status === 'scheduled') scheduled++
+    }
+    return { completedCalls: completed, scheduledCalls: scheduled }
+  }, [calls])
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { Suspense, useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -36,26 +35,33 @@ function ThemeInitializer() {
   return null
 }
 
-// Pages
-import AuthPage from '@/pages/Auth'
-import DashboardPage from '@/pages/Dashboard'
-import ClientsPage from '@/pages/Clients'
-import ClientDetailPage from '@/pages/ClientDetail'
-import CallsPage from '@/pages/Calls'
-import SettingsPage from '@/pages/Settings'
-import NotificationsPage from '@/pages/Notifications'
-import ReportsPage from '@/pages/Reports'
-import TeamPage from '@/pages/Team'
-import AdminPage from '@/pages/Admin'
-import CrmCallsPage from '@/pages/CrmCalls'
-import CrmIntensivoPage from '@/pages/CrmIntensivo'
-import ImportPage from '@/pages/Import'
-import NotFoundPage from '@/pages/NotFound'
+// Lazy-loaded pages for code splitting
+const AuthPage = React.lazy(() => import('@/pages/Auth'))
+const DashboardPage = React.lazy(() => import('@/pages/Dashboard'))
+const ClientsPage = React.lazy(() => import('@/pages/Clients'))
+const ClientDetailPage = React.lazy(() => import('@/pages/ClientDetail'))
+const CallsPage = React.lazy(() => import('@/pages/Calls'))
+const SettingsPage = React.lazy(() => import('@/pages/Settings'))
+const NotificationsPage = React.lazy(() => import('@/pages/Notifications'))
+const ReportsPage = React.lazy(() => import('@/pages/Reports'))
+const TeamPage = React.lazy(() => import('@/pages/Team'))
+const AdminPage = React.lazy(() => import('@/pages/Admin'))
+const CrmCallsPage = React.lazy(() => import('@/pages/CrmCalls'))
+const CrmIntensivoPage = React.lazy(() => import('@/pages/CrmIntensivo'))
+const ImportPage = React.lazy(() => import('@/pages/Import'))
+const NotFoundPage = React.lazy(() => import('@/pages/NotFound'))
 
-// Layout
+// Layout (kept eager - needed on every authenticated route)
 import { AppLayout } from '@/components/layout/AppLayout'
 
-const queryClient = new QueryClient()
+// Route loading spinner
+function PageLoader() {
+  return (
+    <div className="flex h-[50vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading, initialize } = useAuthStore()
@@ -85,12 +91,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeInitializer />
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
+    <TooltipProvider>
+      <ThemeInitializer />
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route
@@ -117,9 +123,9 @@ function App() {
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+        </Suspense>
+      </BrowserRouter>
+    </TooltipProvider>
   )
 }
 
