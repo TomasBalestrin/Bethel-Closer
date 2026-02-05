@@ -342,7 +342,9 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     setLoadingHistorical(true)
     setShowHistorical(true)
     try {
-      const authToken = token || await drive.authorize()
+      // Use silent auth first (no popup), only show popup if really needed
+      let authToken = token || await drive.authorizeSilent()
+      if (!authToken) authToken = await drive.authorize()
       setToken(authToken)
       const currentConfig = sync.getDriveConfig()
 
@@ -362,7 +364,9 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     if (!userId || selectedHistorical.size === 0) return
     setImportingHistorical(true)
     try {
-      const authToken = token || await drive.authorize()
+      // Use silent auth first (no popup), only show popup if really needed
+      let authToken = token || await drive.authorizeSilent()
+      if (!authToken) authToken = await drive.authorize()
       setToken(authToken)
       const filesToImport = historicalFiles.filter(f => selectedHistorical.has(f.id))
       const result = await sync.importSpecificFiles(

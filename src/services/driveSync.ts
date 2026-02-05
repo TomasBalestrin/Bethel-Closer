@@ -267,10 +267,12 @@ export async function syncFromDrive(
   const result: SyncResult = { imported: 0, analyzed: 0, errors: [] }
 
   try {
-    let token = existingToken
+    let token: string | undefined = existingToken
     if (!token) {
       onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
-      token = await authorize()
+      // Try silent auth first (no popup) — only show popup if really needed
+      const silentToken = await authorizeSilent()
+      token = silentToken || await authorize()
     }
 
     const config = getConfig()
