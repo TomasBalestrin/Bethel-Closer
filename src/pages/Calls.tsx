@@ -1,60 +1,43 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus,
   Search,
   Phone,
-  Calendar,
-  Clock,
   Loader2,
   Sparkles,
-  FileText,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Star,
+  Target,
+  AlertTriangle,
   CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  Clock,
+  FileText,
+  FolderSync,
+  Eye,
+  BarChart3,
+  ArrowRight,
+  MessageSquare,
+  ShieldAlert,
+  Award,
   XCircle,
-  AlertCircle,
-  Flame,
-  Thermometer,
-  Snowflake,
-  Ban,
-  CalendarDays,
-  List,
-  MoreVertical,
-  Pencil,
-  RefreshCw,
-  Download,
-  Trash2,
-  Upload,
   ChevronLeft,
   ChevronRight,
-  X
+  Zap
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
-  DialogTitle,
-  DialogFooter
+  DialogTitle
 } from '@/components/ui/dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
@@ -62,189 +45,171 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
+import { syncFromDrive, deriveResultStatus } from '@/services/driveSync'
+import type { SyncProgress } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
-import { formatDateTime, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Call, CallStatus, CallClassification, Client } from '@/types'
+import type { Call, CallResultStatus, CallAnalysisFull, Client } from '@/types'
 
-const callSchema = z.object({
-  client_id: z.string().min(1, 'Selecione um cliente'),
-  scheduled_at: z.string().min(1, 'Selecione a data e hora'),
-  classification: z.enum(['hot', 'warm', 'cold', 'not_qualified']).optional().nullable(),
-  notes: z.string().optional()
-})
+// ──────────────────────────────────────────────
+// Constants
+// ──────────────────────────────────────────────
 
-type CallFormData = z.infer<typeof callSchema>
+const CALLS_PER_PAGE = 18
 
-const CALLS_PER_PAGE = 20
+type TabKey = 'total' | 'pendentes' | 'follow_up' | 'propostas' | 'vendidas' | 'perdidas'
 
-const statusLabels: Record<CallStatus, string> = {
-  scheduled: 'Agendada',
-  completed: 'Concluída',
-  no_show: 'Não Compareceu',
-  rescheduled: 'Reagendada',
-  cancelled: 'Cancelada'
+const TAB_CONFIG: { key: TabKey; label: string; color: string }[] = [
+  { key: 'total', label: 'Total', color: 'text-foreground' },
+  { key: 'pendentes', label: 'Pendentes', color: 'text-yellow-600 dark:text-yellow-400' },
+  { key: 'follow_up', label: 'Follow-up', color: 'text-blue-600 dark:text-blue-400' },
+  { key: 'propostas', label: 'Propostas', color: 'text-purple-600 dark:text-purple-400' },
+  { key: 'vendidas', label: 'Vendidas', color: 'text-green-600 dark:text-green-400' },
+  { key: 'perdidas', label: 'Perdidas', color: 'text-red-600 dark:text-red-400' }
+]
+
+const RESULT_STATUS_BADGES: Record<CallResultStatus, { label: string; className: string }> = {
+  pendente: { label: 'Pendente', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800' },
+  follow_up: { label: 'Follow-up', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800' },
+  proposta: { label: 'Proposta', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800' },
+  vendida: { label: 'Vendida', className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800' },
+  perdida: { label: 'Perdida', className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border-red-200 dark:border-red-800' }
 }
 
-const statusIcons: Record<CallStatus, React.ReactNode> = {
-  scheduled: <Calendar className="h-4 w-4" />,
-  completed: <CheckCircle2 className="h-4 w-4" />,
-  no_show: <XCircle className="h-4 w-4" />,
-  rescheduled: <AlertCircle className="h-4 w-4" />,
-  cancelled: <XCircle className="h-4 w-4" />
+const ETAPA_LABELS: Record<string, string> = {
+  conexao: 'Conexão Estratégica',
+  abertura: 'Abertura',
+  mapeamento_empresa: 'Mapeamento da Empresa',
+  mapeamento_problema: 'Mapeamento do Problema',
+  consultoria: 'Consultoria Estratégica',
+  problematizacao: 'Problematização',
+  solucao_imaginada: 'Solução Imaginada',
+  transicao: 'Transição',
+  pitch: 'Pitch',
+  perguntas_compromisso: 'Perguntas de Compromisso',
+  fechamento: 'Fechamento Estratégico',
+  objecoes_negociacao: 'Quebra de Objeções'
 }
 
-const statusColors: Record<CallStatus, 'default' | 'secondary' | 'success' | 'destructive' | 'warning'> = {
-  scheduled: 'secondary',
-  completed: 'success',
-  no_show: 'destructive',
-  rescheduled: 'warning',
-  cancelled: 'destructive'
+// ──────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────
+
+function getResultStatus(call: Call): CallResultStatus {
+  const analysis = call.ai_analysis as CallAnalysisFull | undefined
+  if (!analysis || !analysis.nota_geral) return 'pendente'
+  if (analysis.result_status) return analysis.result_status
+  return deriveResultStatus(analysis)
 }
 
-const classificationLabels: Record<CallClassification, string> = {
-  hot: 'Quente',
-  warm: 'Morno',
-  cold: 'Frio',
-  not_qualified: 'Não Qualificado'
+function getScoreColor(score: number): string {
+  if (score >= 8) return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700'
+  if (score >= 5) return 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/40 border-yellow-300 dark:border-yellow-700'
+  return 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700'
 }
 
-const classificationIcons: Record<CallClassification, React.ReactNode> = {
-  hot: <Flame className="h-4 w-4 text-red-500" />,
-  warm: <Thermometer className="h-4 w-4 text-orange-500" />,
-  cold: <Snowflake className="h-4 w-4 text-blue-500" />,
-  not_qualified: <Ban className="h-4 w-4 text-gray-500" />
+function getScoreBgColor(score: number): string {
+  if (score >= 8) return 'from-green-500 to-emerald-600'
+  if (score >= 5) return 'from-yellow-500 to-orange-500'
+  return 'from-red-500 to-rose-600'
 }
 
-const classificationColors: Record<CallClassification, string> = {
-  hot: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
-  warm: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800',
-  cold: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
-  not_qualified: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+function getLevelFromScore(score: number): { label: string; color: string } {
+  if (score >= 8) return { label: 'Avançado', color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' }
+  if (score >= 5) return { label: 'Intermediário', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' }
+  return { label: 'Iniciante', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' }
 }
+
+function getCheckStatusIcon(status?: string) {
+  if (status === 'ok') return <CheckCircle2 className="h-4 w-4 text-green-500" />
+  if (status === 'parcial') return <AlertTriangle className="h-4 w-4 text-yellow-500" />
+  return <XCircle className="h-4 w-4 text-red-500" />
+}
+
+// ──────────────────────────────────────────────
+// Main Page Component
+// ──────────────────────────────────────────────
 
 export default function CallsPage() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingCall, setEditingCall] = useState<(Call & { client: Client }) | null>(null)
-  const [isRescheduling, setIsRescheduling] = useState(false)
-  const [isAnalyzing, setIsAnalyzing] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<TabKey>('total')
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<CallStatus | 'all'>('all')
-  const [classificationFilter, setClassificationFilter] = useState<CallClassification | 'all'>('all')
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [selectedCall, setSelectedCall] = useState<(Call & { client?: Client }) | null>(null)
+  const [showSummary, setShowSummary] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [deleteCallId, setDeleteCallId] = useState<string | null>(null)
-  const [uploadingRecording, setUploadingRecording] = useState<string | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState<string | null>(null)
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
 
-  const form = useForm<CallFormData>({
-    resolver: zodResolver(callSchema),
-    defaultValues: {
-      client_id: '',
-      scheduled_at: '',
-      classification: null,
-      notes: ''
-    }
-  })
+  // ── Queries ──
 
-  const openDialog = (call?: Call & { client: Client }, reschedule = false) => {
-    if (call) {
-      setEditingCall(call)
-      setIsRescheduling(reschedule)
-      form.reset({
-        client_id: call.client_id,
-        scheduled_at: reschedule ? '' : call.scheduled_at.slice(0, 16),
-        classification: call.classification || null,
-        notes: call.notes || ''
-      })
-    } else {
-      setEditingCall(null)
-      setIsRescheduling(false)
-      form.reset({
-        client_id: '',
-        scheduled_at: '',
-        classification: null,
-        notes: ''
-      })
-    }
-    setIsDialogOpen(true)
-  }
-
-  // Fetch calls with server-side status, classification, and date filters
   const { data: calls, isLoading } = useQuery({
-    queryKey: ['calls', statusFilter, classificationFilter, dateFrom, dateTo],
-    queryFn: async () => {
-      let query = supabase
-        .from('calls')
-        .select(`
-          *,
-          client:clients(id, name, email, phone, ticket_type)
-        `)
-        .order('scheduled_at', { ascending: false })
-
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-
-      if (classificationFilter !== 'all') {
-        query = query.eq('classification', classificationFilter)
-      }
-
-      if (dateFrom) {
-        query = query.gte('scheduled_at', dateFrom)
-      }
-
-      if (dateTo) {
-        query = query.lte('scheduled_at', dateTo + 'T23:59:59')
-      }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      return data as (Call & { client: Client })[]
-    }
-  })
-
-  const { data: clients } = useQuery({
-    queryKey: ['clients-list'],
+    queryKey: ['calls-analysis'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('clients')
-        .select('id, name, ticket_type')
-        .order('name')
+        .from('calls')
+        .select(`*, client:clients(id, name, email, phone, company)`)
+        .order('scheduled_at', { ascending: false })
 
       if (error) throw error
-      return data as Pick<Client, 'id' | 'name' | 'ticket_type'>[]
-    }
+      return data as (Call & { client?: Client })[]
+    },
+    refetchInterval: 60000 // Auto-refresh every 60s for near real-time
   })
 
-  // Client-side search filtering
-  const filteredCalls = useMemo(() => {
-    if (!calls) return []
-    if (!searchQuery.trim()) return calls
+  // ── Computed ──
 
-    const q = searchQuery.toLowerCase()
-    return calls.filter(call =>
-      call.client?.name?.toLowerCase().includes(q) ||
-      call.notes?.toLowerCase().includes(q) ||
-      call.ai_summary?.toLowerCase().includes(q) ||
-      call.client?.email?.toLowerCase().includes(q) ||
-      call.client?.phone?.includes(q)
-    )
-  }, [calls, searchQuery])
+  const callsWithStatus = useMemo(() => {
+    if (!calls) return []
+    return calls.map(call => ({
+      ...call,
+      _resultStatus: getResultStatus(call)
+    }))
+  }, [calls])
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<TabKey, number> = { total: 0, pendentes: 0, follow_up: 0, propostas: 0, vendidas: 0, perdidas: 0 }
+    const statusToTab: Record<CallResultStatus, TabKey> = {
+      pendente: 'pendentes', follow_up: 'follow_up', proposta: 'propostas', vendida: 'vendidas', perdida: 'perdidas'
+    }
+    callsWithStatus.forEach(c => {
+      counts.total++
+      const tabKey = statusToTab[c._resultStatus]
+      if (tabKey) counts[tabKey]++
+    })
+    return counts
+  }, [callsWithStatus])
+
+  const filteredCalls = useMemo(() => {
+    let list = callsWithStatus
+
+    // Tab filter
+    if (activeTab !== 'total') {
+      const statusMap: Record<string, CallResultStatus> = {
+        pendentes: 'pendente', follow_up: 'follow_up', propostas: 'proposta', vendidas: 'vendida', perdidas: 'perdida'
+      }
+      list = list.filter(c => c._resultStatus === statusMap[activeTab])
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(c =>
+        c.client?.name?.toLowerCase().includes(q) ||
+        (c.ai_analysis as CallAnalysisFull)?.identificacao?.nome_lead?.toLowerCase().includes(q) ||
+        (c.ai_analysis as CallAnalysisFull)?.identificacao?.produto_ofertado?.toLowerCase().includes(q) ||
+        (c.ai_analysis as CallAnalysisFull)?.dados_extraidos?.nicho_profissao?.toLowerCase().includes(q) ||
+        c.notes?.toLowerCase().includes(q)
+      )
+    }
+
+    return list
+  }, [callsWithStatus, activeTab, searchQuery])
 
   // Pagination
   const totalPages = Math.ceil(filteredCalls.length / CALLS_PER_PAGE)
@@ -253,942 +218,1194 @@ export default function CallsPage() {
     return filteredCalls.slice(start, start + CALLS_PER_PAGE)
   }, [filteredCalls, currentPage])
 
-  // Reset page when filters change
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    setCurrentPage(1)
-  }
+  // Period stats (from ALL calls, not filtered)
+  const periodStats = useMemo(() => {
+    const analyzed = callsWithStatus.filter(c => (c.ai_analysis as CallAnalysisFull)?.nota_geral)
+    const totalScore = analyzed.reduce((sum, c) => sum + ((c.ai_analysis as CallAnalysisFull)?.nota_geral || 0), 0)
+    return {
+      total: callsWithStatus.length,
+      avgScore: analyzed.length > 0 ? totalScore / analyzed.length : 0,
+      analyzedPct: callsWithStatus.length > 0 ? Math.round((analyzed.length / callsWithStatus.length) * 100) : 0
+    }
+  }, [callsWithStatus])
 
-  const createMutation = useMutation({
-    mutationFn: async (data: CallFormData) => {
-      const { error } = await supabase.from('calls').insert({
-        ...data,
-        closer_id: user?.id,
-        status: 'scheduled'
+  // Aggregated acertos/erros from all analyzed calls
+  const { topAcertos, topErros } = useMemo(() => {
+    const acertosMap = new Map<string, number>()
+    const errosMap = new Map<string, number>()
+
+    callsWithStatus.forEach(c => {
+      const analysis = c.ai_analysis as CallAnalysisFull
+      if (!analysis) return
+
+      analysis.maiores_acertos?.forEach(a => {
+        if (a.acerto && a.acerto !== 'nao_informado') {
+          const key = a.acerto.length > 80 ? a.acerto.slice(0, 80) + '...' : a.acerto
+          acertosMap.set(key, (acertosMap.get(key) || 0) + 1)
+        }
       })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calls'] })
-      toast.success('Ligação agendada com sucesso!')
-      setIsDialogOpen(false)
-      form.reset()
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Erro ao agendar ligação')
-    }
-  })
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Call> }) => {
-      const { error } = await supabase.from('calls').update(data).eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calls'] })
-      toast.success('Ligação atualizada!')
-      setIsDialogOpen(false)
-      setEditingCall(null)
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar ligação')
-    }
-  })
+      analysis.maiores_erros?.forEach(e => {
+        if (e.erro && e.erro !== 'nao_informado') {
+          const key = e.erro.length > 80 ? e.erro.slice(0, 80) + '...' : e.erro
+          errosMap.set(key, (errosMap.get(key) || 0) + 1)
+        }
+      })
+    })
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('calls').delete().eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calls'] })
-      toast.success('Ligação excluída!')
-      setDeleteCallId(null)
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Erro ao excluir ligação')
-    }
-  })
+    const topAcertos = [...acertosMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
 
-  const handleAnalyzeCall = async (call: Call & { client: Client }) => {
+    const topErros = [...errosMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+
+    return { topAcertos, topErros }
+  }, [callsWithStatus])
+
+  // Reset page on filter change
+  useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery])
+
+  // ── Actions ──
+
+  const handleSync = useCallback(async () => {
+    if (!user?.id || syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing') return
+
+    const result = await syncFromDrive(user.id, (progress) => {
+      setSyncProgress(progress)
+    })
+
+    if (result.imported > 0 || result.analyzed > 0) {
+      queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
+      toast.success(`${result.imported} calls importadas, ${result.analyzed} analisadas`)
+    }
+
+    if (result.errors.length > 0) {
+      toast.error(`${result.errors.length} erro(s) durante a sincronização`)
+    }
+
+    // Clear progress after delay
+    setTimeout(() => setSyncProgress(null), 5000)
+  }, [user?.id, syncProgress, queryClient])
+
+  const handleAnalyzeCall = async (call: Call & { client?: Client }) => {
     if (!call.notes) {
-      toast.error('Adicione anotações da ligação antes de analisar')
+      toast.error('Sem transcrição para analisar')
       return
     }
 
     setIsAnalyzing(call.id)
     try {
       const analysis = await analyzeCallTranscript(call.notes)
+      const resultStatus = deriveResultStatus(analysis)
 
-      await updateMutation.mutateAsync({
-        id: call.id,
-        data: {
-          ai_summary: analysis.summary,
-          ai_analysis: analysis,
-          quality_score: analysis.score
-        }
-      })
+      await supabase
+        .from('calls')
+        .update({
+          ai_summary: [
+            analysis.identificacao?.produto_ofertado,
+            analysis.dados_extraidos?.nicho_profissao,
+            `Nota: ${analysis.nota_geral}/10`
+          ].filter(Boolean).join(' | '),
+          ai_analysis: {
+            ...analysis,
+            result_status: resultStatus,
+            drive_file_id: (call.ai_analysis as CallAnalysisFull)?.drive_file_id
+          },
+          quality_score: analysis.nota_geral || 0
+        })
+        .eq('id', call.id)
 
-      toast.success(call.ai_summary ? 'Re-análise de IA concluída!' : 'Análise de IA concluída!')
-    } catch {
-      toast.error('Erro ao analisar ligação')
+      queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
+      toast.success('Análise concluída!')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao analisar')
     } finally {
       setIsAnalyzing(null)
     }
   }
 
-  const handleCompleteCall = async (id: string, duration: number, notes?: string) => {
-    const updateData: Partial<Call> = {
-      status: 'completed',
-      duration_minutes: duration
-    }
-    if (notes) {
-      updateData.notes = notes
-    }
-    await updateMutation.mutateAsync({ id, data: updateData })
-  }
+  const handleStatusChange = async (callId: string, newStatus: CallResultStatus) => {
+    const call = calls?.find(c => c.id === callId)
+    if (!call) return
 
-  const handleReschedule = async (id: string, newDate: string) => {
-    await updateMutation.mutateAsync({
-      id,
-      data: {
-        scheduled_at: newDate,
-        status: 'rescheduled'
-      }
-    })
-    setIsDialogOpen(false)
-  }
-
-  const handleRecordingUpload = async (callId: string, file: File) => {
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('Arquivo muito grande. Máximo: 50MB')
-      return
-    }
-
-    const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/x-m4a']
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Formato não suportado. Use MP3, WAV, OGG ou WebM')
-      return
-    }
-
-    setUploadingRecording(callId)
-    try {
-      const ext = file.name.split('.').pop() || 'mp3'
-      const path = `recordings/${callId}.${ext}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('recordings')
-        .upload(path, file, { upsert: true })
-
-      if (uploadError) {
-        // Try creating bucket if it doesn't exist
-        if (uploadError.message?.includes('not found') || uploadError.message?.includes('Bucket')) {
-          toast.error('Bucket de gravações não configurado no Supabase Storage')
-          return
-        }
-        throw uploadError
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('recordings')
-        .getPublicUrl(path)
-
-      await updateMutation.mutateAsync({
-        id: callId,
-        data: { recording_url: urlData.publicUrl }
+    const currentAnalysis = (call.ai_analysis || {}) as CallAnalysisFull
+    await supabase
+      .from('calls')
+      .update({
+        ai_analysis: { ...currentAnalysis, result_status: newStatus }
       })
+      .eq('id', callId)
 
-      toast.success('Gravação enviada com sucesso!')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Erro ao enviar gravação')
-    } finally {
-      setUploadingRecording(null)
-    }
+    queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
+    toast.success('Status atualizado!')
   }
 
-  const handleExportCSV = () => {
-    if (!filteredCalls.length) {
-      toast.error('Nenhuma ligação para exportar')
-      return
-    }
-
-    const headers = ['Cliente', 'Data/Hora', 'Status', 'Classificação', 'Duração (min)', 'Score IA', 'Resumo IA', 'Notas']
-    const rows = filteredCalls.map(call => [
-      call.client?.name || '',
-      formatDateTime(call.scheduled_at),
-      statusLabels[call.status],
-      call.classification ? classificationLabels[call.classification] : '',
-      call.duration_minutes?.toString() || '',
-      call.quality_score?.toString() || '',
-      call.ai_summary || '',
-      call.notes || ''
-    ])
-
-    const csvContent = '\uFEFF' + [
-      headers.join(';'),
-      ...rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(';'))
-    ].join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ligacoes_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-    toast.success('Exportação concluída!')
-  }
-
-  const onSubmit = (data: CallFormData) => {
-    if (isRescheduling && editingCall) {
-      handleReschedule(editingCall.id, data.scheduled_at)
-    } else if (editingCall) {
-      updateMutation.mutate({
-        id: editingCall.id,
-        data: {
-          scheduled_at: data.scheduled_at,
-          classification: data.classification || undefined,
-          notes: data.notes
-        }
-      })
-    } else {
-      createMutation.mutate(data)
-    }
-  }
-
-  // Group calls by date for calendar view
-  const callsByDate = paginatedCalls.reduce((acc, call) => {
-    const date = formatDate(call.scheduled_at)
-    if (!acc[date]) acc[date] = []
-    acc[date].push(call)
-    return acc
-  }, {} as Record<string, (Call & { client: Client })[]>)
-
-  const scheduledCalls = paginatedCalls.filter(c => c.status === 'scheduled')
-  const completedCalls = paginatedCalls.filter(c => c.status === 'completed')
-  const otherCalls = paginatedCalls.filter(c => !['scheduled', 'completed'].includes(c.status))
-
-  // Stats (from all filtered calls, not just current page)
-  const totalCalls = filteredCalls.length
-  const hotCalls = filteredCalls.filter(c => c.classification === 'hot').length
-  const callsWithScore = filteredCalls.filter(c => c.quality_score)
-  const avgScore = callsWithScore.length > 0
-    ? callsWithScore.reduce((sum, c) => sum + (c.quality_score || 0), 0) / callsWithScore.length
-    : 0
-
-  // Shared callback factory for CallCards
-  const callCardProps = (call: Call & { client: Client }) => ({
-    call,
-    isAnalyzing: isAnalyzing === call.id,
-    isUploadingRecording: uploadingRecording === call.id,
-    onAnalyze: () => handleAnalyzeCall(call),
-    onComplete: (duration: number, notes?: string) => handleCompleteCall(call.id, duration, notes),
-    onStatusChange: (status: CallStatus) => updateMutation.mutate({ id: call.id, data: { status } }),
-    onClassificationChange: (classification: CallClassification) => updateMutation.mutate({ id: call.id, data: { classification } }),
-    onEdit: () => openDialog(call),
-    onReschedule: () => openDialog(call, true),
-    onDelete: () => setDeleteCallId(call.id),
-    onRecordingUpload: (file: File) => handleRecordingUpload(call.id, file)
-  })
+  // ── Render ──
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Ligações</h1>
+          <h1 className="text-3xl font-bold">Calls</h1>
           <p className="text-muted-foreground">
-            Gerencie suas ligações e análises de IA
+            Análise inteligente de calls com IA
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar CSV
-          </Button>
-          <div className="flex items-center border rounded-lg p-1">
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'calendar' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('calendar')}
-            >
-              <CalendarDays className="h-4 w-4" />
-            </Button>
-          </div>
-          <Button onClick={() => openDialog()}>
-            <Plus className="h-4 w-4 mr-2" />
-            Agendar Ligação
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{totalCalls}</div>
-            <p className="text-sm text-muted-foreground">Total de Ligações</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{filteredCalls.filter(c => c.status === 'scheduled').length}</div>
-            <p className="text-sm text-muted-foreground">Agendadas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
-              <Flame className="h-5 w-5" />
-              {hotCalls}
+          {syncProgress && syncProgress.status !== 'done' && syncProgress.status !== 'idle' && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mr-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="hidden sm:inline">{syncProgress.message}</span>
+              {syncProgress.current && syncProgress.total && (
+                <span>({syncProgress.current}/{syncProgress.total})</span>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">Leads Quentes</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{avgScore.toFixed(0)}%</div>
-            <p className="text-sm text-muted-foreground">Score Médio IA</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por cliente, notas, email, telefone..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
-          </div>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => { setStatusFilter(value as CallStatus | 'all'); setCurrentPage(1) }}
-          >
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os Status</SelectItem>
-              {Object.entries(statusLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={classificationFilter}
-            onValueChange={(value) => { setClassificationFilter(value as CallClassification | 'all'); setCurrentPage(1) }}
-          >
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Classificação" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas</SelectItem>
-              {Object.entries(classificationLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  <div className="flex items-center gap-2">
-                    {classificationIcons[value as CallClassification]}
-                    {label}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Date Range Filter */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">Período:</span>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1) }}
-            className="w-full sm:w-[180px]"
-            placeholder="De"
-          />
-          <span className="text-sm text-muted-foreground">até</span>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1) }}
-            className="w-full sm:w-[180px]"
-            placeholder="Até"
-          />
-          {(dateFrom || dateTo) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1) }}
-            >
-              <X className="h-4 w-4 mr-1" />
-              Limpar
-            </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={handleSync}
+            disabled={syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' || syncProgress?.status === 'connecting'}
+          >
+            {syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FolderSync className="h-4 w-4 mr-2" />
+            )}
+            Sincronizar Drive
+          </Button>
         </div>
       </div>
 
-      {/* Calls List or Calendar */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : viewMode === 'calendar' ? (
-        // Calendar View
-        <div className="space-y-6">
-          {Object.entries(callsByDate).length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Nenhuma ligação encontrada</p>
-              </CardContent>
-            </Card>
-          ) : (
-            Object.entries(callsByDate).map(([date, dateCalls]) => (
-              <div key={date}>
-                <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
-                  <CalendarDays className="h-5 w-5 text-primary" />
-                  {date}
-                </h3>
-                <div className="space-y-3">
-                  {dateCalls.map((call) => (
-                    <CallCard key={call.id} {...callCardProps(call)} />
-                  ))}
+      {/* Status Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+        <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-transparent p-0">
+          {TAB_CONFIG.map(tab => (
+            <TabsTrigger
+              key={tab.key}
+              value={tab.key}
+              className={cn(
+                'data-[state=active]:bg-background data-[state=active]:shadow-sm border',
+                'rounded-lg px-4 py-2 text-sm font-medium transition-all'
+              )}
+            >
+              <span className={cn(activeTab === tab.key && tab.color)}>
+                {tab.label}
+              </span>
+              <span className={cn(
+                'ml-1.5 text-xs font-bold rounded-full px-1.5 py-0.5',
+                activeTab === tab.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
+              )}>
+                {tabCounts[tab.key]}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Period Summary (Collapsible) */}
+      <Card>
+        <button
+          onClick={() => setShowSummary(!showSummary)}
+          className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors rounded-lg"
+        >
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            <span className="font-semibold">Resumo do Período</span>
+          </div>
+          {showSummary ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+
+        {showSummary && (
+          <CardContent className="pt-0 pb-4 space-y-4">
+            {/* Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="rounded-lg border p-4 text-center">
+                <div className="text-3xl font-bold">{periodStats.total}</div>
+                <div className="text-sm text-muted-foreground">Total de Calls</div>
+              </div>
+              <div className="rounded-lg border p-4 text-center">
+                <div className={cn('text-3xl font-bold', periodStats.avgScore >= 7 ? 'text-green-600' : periodStats.avgScore >= 4 ? 'text-yellow-600' : 'text-red-600')}>
+                  {periodStats.avgScore.toFixed(1)}<span className="text-lg text-muted-foreground">/10</span>
+                </div>
+                <div className="text-sm text-muted-foreground">Nota Média</div>
+              </div>
+              <div className="rounded-lg border p-4 text-center">
+                <div className="text-3xl font-bold text-primary">{periodStats.analyzedPct}%</div>
+                <div className="text-sm text-muted-foreground">Calls Analisadas</div>
+              </div>
+            </div>
+
+            {/* Acertos & Erros */}
+            {(topAcertos.length > 0 || topErros.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Maiores Acertos */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="h-4 w-4 text-green-600" />
+                    <span className="font-semibold text-sm text-green-700 dark:text-green-400">Maiores Acertos</span>
+                  </div>
+                  <div className="space-y-2">
+                    {topAcertos.map(([text, count], i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <Badge variant="outline" className="shrink-0 text-xs bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                          {count}x
+                        </Badge>
+                        <span className="text-sm">{text}</span>
+                      </div>
+                    ))}
+                    {topAcertos.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nenhum acerto identificado ainda</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Maiores Erros */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingDown className="h-4 w-4 text-red-600" />
+                    <span className="font-semibold text-sm text-red-700 dark:text-red-400">Maiores Erros</span>
+                  </div>
+                  <div className="space-y-2">
+                    {topErros.map(([text, count], i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <Badge variant="outline" className="shrink-0 text-xs bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
+                          {count}x
+                        </Badge>
+                        <span className="text-sm">{text}</span>
+                      </div>
+                    ))}
+                    {topErros.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nenhum erro identificado ainda</p>
+                    )}
+                  </div>
                 </div>
               </div>
-            ))
-          )}
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nome, produto, nicho..."
+          className="pl-9"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2"
+          >
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
+      </div>
+
+      {/* Call Cards Grid */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
+      ) : paginatedCalls.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <Phone className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-lg mb-2">Nenhuma call encontrada</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Sincronize com o Google Drive para importar transcrições
+            </p>
+            <Button variant="outline" onClick={handleSync}>
+              <FolderSync className="h-4 w-4 mr-2" />
+              Sincronizar Drive
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        // List View with Tabs
-        <Tabs defaultValue="scheduled">
-          <TabsList>
-            <TabsTrigger value="scheduled">
-              Agendadas ({scheduledCalls.length})
-            </TabsTrigger>
-            <TabsTrigger value="completed">
-              Concluídas ({completedCalls.length})
-            </TabsTrigger>
-            <TabsTrigger value="other">
-              Outras ({otherCalls.length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="scheduled" className="mt-6">
-            {scheduledCalls.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Nenhuma ligação agendada</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {scheduledCalls.map((call) => (
-                  <CallCard key={call.id} {...callCardProps(call)} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="completed" className="mt-6">
-            {completedCalls.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <CheckCircle2 className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Nenhuma ligação concluída</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {completedCalls.map((call) => (
-                  <CallCard key={call.id} {...callCardProps(call)} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="other" className="mt-6">
-            {otherCalls.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Nenhuma outra ligação</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {otherCalls.map((call) => (
-                  <CallCard key={call.id} {...callCardProps(call)} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {paginatedCalls.map((call) => (
+            <CallGridCard
+              key={call.id}
+              call={call}
+              isAnalyzing={isAnalyzing === call.id}
+              onView={() => setSelectedCall(call)}
+              onAnalyze={() => handleAnalyzeCall(call)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Mostrando {((currentPage - 1) * CALLS_PER_PAGE) + 1}–{Math.min(currentPage * CALLS_PER_PAGE, filteredCalls.length)} de {filteredCalls.length} ligações
+            {((currentPage - 1) * CALLS_PER_PAGE) + 1}–{Math.min(currentPage * CALLS_PER_PAGE, filteredCalls.length)} de {filteredCalls.length}
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => p - 1)}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Anterior
+            <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm font-medium">
-              {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => p + 1)}
-            >
-              Próxima
-              <ChevronRight className="h-4 w-4 ml-1" />
+            <span className="text-sm font-medium">{currentPage}/{totalPages}</span>
+            <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* Create/Edit/Reschedule Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setIsDialogOpen(false)
-          setEditingCall(null)
-          setIsRescheduling(false)
-          form.reset()
-        }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {isRescheduling ? 'Reagendar Ligação' : editingCall ? 'Editar Ligação' : 'Agendar Ligação'}
-            </DialogTitle>
-            <DialogDescription>
-              {isRescheduling
-                ? 'Selecione uma nova data e hora para a ligação'
-                : editingCall
-                ? 'Atualize as informações da ligação'
-                : 'Agende uma nova ligação com um cliente'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {!isRescheduling && (
-              <div className="space-y-2">
-                <Label>Cliente</Label>
-                <Select
-                  value={form.watch('client_id')}
-                  onValueChange={(value) => form.setValue('client_id', value)}
-                  disabled={!!editingCall}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients?.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.client_id && (
-                  <p className="text-sm text-destructive">
-                    {form.formState.errors.client_id.message}
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="scheduled_at">Data e Hora</Label>
-              <Input
-                id="scheduled_at"
-                type="datetime-local"
-                {...form.register('scheduled_at')}
-              />
-              {form.formState.errors.scheduled_at && (
-                <p className="text-sm text-destructive">
-                  {form.formState.errors.scheduled_at.message}
-                </p>
-              )}
-            </div>
-            {!isRescheduling && (
-              <>
-                <div className="space-y-2">
-                  <Label>Classificação do Lead</Label>
-                  <Select
-                    value={form.watch('classification') || ''}
-                    onValueChange={(value) => form.setValue('classification', value as CallClassification || null)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Não classificado</SelectItem>
-                      {Object.entries(classificationLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          <div className="flex items-center gap-2">
-                            {classificationIcons[value as CallClassification]}
-                            {label}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Observações</Label>
-                  <Textarea
-                    id="notes"
-                    {...form.register('notes')}
-                    placeholder="Adicione observações sobre a ligação..."
-                    rows={3}
-                  />
-                </div>
-              </>
-            )}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => {
-                setIsDialogOpen(false)
-                setEditingCall(null)
-                setIsRescheduling(false)
-                form.reset()
-              }}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                {(createMutation.isPending || updateMutation.isPending) && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                {isRescheduling ? 'Reagendar' : editingCall ? 'Salvar' : 'Agendar'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteCallId} onOpenChange={(open) => { if (!open) setDeleteCallId(null) }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir Ligação</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir esta ligação? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (deleteCallId) deleteMutation.mutate(deleteCallId) }}
-            >
-              {deleteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Call Detail Dialog */}
+      <CallDetailDialog
+        call={selectedCall}
+        open={!!selectedCall}
+        onClose={() => setSelectedCall(null)}
+        onStatusChange={handleStatusChange}
+        onAnalyze={handleAnalyzeCall}
+        isAnalyzing={isAnalyzing === selectedCall?.id}
+      />
     </div>
   )
 }
 
-interface CallCardProps {
-  call: Call & { client: Client }
+// ──────────────────────────────────────────────
+// Call Grid Card Component
+// ──────────────────────────────────────────────
+
+interface CallGridCardProps {
+  call: Call & { client?: Client; _resultStatus?: CallResultStatus }
   isAnalyzing?: boolean
-  isUploadingRecording?: boolean
-  onAnalyze?: () => void
-  onComplete?: (duration: number, notes?: string) => void
-  onStatusChange?: (status: CallStatus) => void
-  onClassificationChange?: (classification: CallClassification) => void
-  onEdit?: () => void
-  onReschedule?: () => void
-  onDelete?: () => void
-  onRecordingUpload?: (file: File) => void
+  onView: () => void
+  onAnalyze: () => void
 }
 
-function CallCard({
-  call,
-  isAnalyzing,
-  isUploadingRecording,
-  onAnalyze,
-  onComplete,
-  onStatusChange,
-  onClassificationChange,
-  onEdit,
-  onReschedule,
-  onDelete,
-  onRecordingUpload
-}: CallCardProps) {
-  const [showCompleteForm, setShowCompleteForm] = useState(false)
-  const [duration, setDuration] = useState('')
-  const [notes, setNotes] = useState(call.notes || '')
+function CallGridCard({ call, isAnalyzing, onView, onAnalyze }: CallGridCardProps) {
+  const analysis = call.ai_analysis as CallAnalysisFull | undefined
+  const hasAnalysis = !!analysis?.nota_geral
+  const score = analysis?.nota_geral || 0
+  const resultStatus = call._resultStatus || getResultStatus(call)
+  const statusBadge = RESULT_STATUS_BADGES[resultStatus]
+  const level = hasAnalysis ? getLevelFromScore(score) : null
+
+  const clientName = call.client?.name ||
+    analysis?.identificacao?.nome_lead ||
+    (analysis?.drive_file_name as string) ||
+    'Call sem nome'
+  const product = analysis?.identificacao?.produto_ofertado
+  const niche = analysis?.dados_extraidos?.nicho_profissao
+  const mainPain = analysis?.dados_extraidos?.dor_principal_declarada?.texto
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Phone className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-base">{call.client?.name || 'Cliente'}</CardTitle>
-              <CardDescription className="flex items-center gap-2 flex-wrap">
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {formatDateTime(call.scheduled_at)}
-                </span>
-                {call.duration_minutes && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {call.duration_minutes} min
-                  </span>
-                )}
-              </CardDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {call.classification && (
-              <Badge className={`${classificationColors[call.classification]} border`}>
-                {classificationIcons[call.classification]}
-                <span className="ml-1">{classificationLabels[call.classification]}</span>
-              </Badge>
-            )}
-            <Badge variant={statusColors[call.status]}>
-              {statusIcons[call.status]}
-              <span className="ml-1">{statusLabels[call.status]}</span>
-            </Badge>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {onEdit && (
-                  <DropdownMenuItem onClick={onEdit}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Editar
-                  </DropdownMenuItem>
-                )}
-                {onReschedule && (call.status === 'scheduled' || call.status === 'no_show' || call.status === 'cancelled') && (
-                  <DropdownMenuItem onClick={onReschedule}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Reagendar
-                  </DropdownMenuItem>
-                )}
-                {onStatusChange && call.status === 'scheduled' && (
-                  <DropdownMenuItem onClick={() => onStatusChange('cancelled')}>
-                    <XCircle className="h-4 w-4 mr-2" />
-                    Cancelar Ligação
-                  </DropdownMenuItem>
-                )}
-                {onClassificationChange && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {Object.entries(classificationLabels).map(([value, label]) => (
-                      <DropdownMenuItem
-                        key={value}
-                        onClick={() => onClassificationChange(value as CallClassification)}
-                      >
-                        {classificationIcons[value as CallClassification]}
-                        <span className="ml-2">Marcar como {label}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-                {onDelete && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={onDelete}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Excluir
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {call.notes && !showCompleteForm && (
-          <p className="text-sm text-muted-foreground">{call.notes}</p>
-        )}
+    <Card
+      className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all group relative overflow-hidden"
+      onClick={onView}
+    >
+      {/* Score indicator bar at top */}
+      {hasAnalysis && (
+        <div className={cn('h-1 w-full bg-gradient-to-r', getScoreBgColor(score))} />
+      )}
 
-        {/* Recording Player */}
-        {call.recording_url && (
-          <div className="p-3 rounded-lg bg-muted/50 border">
-            <div className="flex items-center gap-2 mb-2">
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Gravação da Ligação</span>
-            </div>
-            <audio controls className="w-full h-8" preload="metadata">
-              <source src={call.recording_url} />
-              Seu navegador não suporta reprodução de áudio.
-            </audio>
-          </div>
-        )}
-
-        {call.ai_summary && (
-          <div className="p-3 rounded-lg bg-primary/5 border border-primary/10">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="font-medium text-sm">Resumo IA</span>
-              {call.quality_score !== null && call.quality_score !== undefined && (
-                <Badge variant="outline" className="ml-auto">
-                  Score: {call.quality_score}%
-                </Badge>
+      <CardContent className={cn('p-4 space-y-3', !hasAnalysis && 'pt-4')}>
+        {/* Top row: Name + Score */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-base truncate">{clientName}</h3>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {product && product !== 'nao_informado' && (
+                <Badge variant="outline" className="text-xs">{product}</Badge>
+              )}
+              {niche && niche !== 'nao_informado' && (
+                <Badge variant="secondary" className="text-xs">{niche}</Badge>
               )}
             </div>
-            <p className="text-sm">{call.ai_summary}</p>
           </div>
+
+          {hasAnalysis ? (
+            <div className={cn(
+              'flex items-center justify-center w-12 h-12 rounded-full border-2 font-bold text-sm shrink-0',
+              getScoreColor(score)
+            )}>
+              {score}<span className="text-[10px] font-normal">/10</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 border-dashed border-muted-foreground/30 shrink-0">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
+        {/* Date */}
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          {formatDate(call.scheduled_at)}
+        </div>
+
+        {/* Main Pain */}
+        {mainPain && mainPain !== 'nao_informado' && (
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            <span className="font-medium text-foreground">Dor principal:</span> {mainPain}
+          </p>
         )}
 
-        {showCompleteForm ? (
-          <div className="space-y-3 p-3 border rounded-lg bg-muted/50">
-            <div className="space-y-2">
-              <Label>Duração (minutos)</Label>
-              <Input
-                type="number"
-                placeholder="Ex: 30"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Anotações da ligação</Label>
-              <Textarea
-                placeholder="Descreva os principais pontos discutidos..."
-                value={notes}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (duration && onComplete) {
-                    onComplete(parseInt(duration), notes)
-                    setShowCompleteForm(false)
-                  }
-                }}
-                disabled={!duration}
-              >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Confirmar
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowCompleteForm(false)}
-              >
-                Cancelar
-              </Button>
-            </div>
+        {/* Bottom: Level + Status badges */}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="flex items-center gap-1.5">
+            {level && (
+              <Badge className={cn('text-xs border', level.color)}>
+                {level.label}
+              </Badge>
+            )}
+            <Badge className={cn('text-xs border', statusBadge.className)}>
+              {statusBadge.label}
+            </Badge>
           </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {/* Complete / No Show / Cancel - for scheduled calls */}
-            {call.status === 'scheduled' && onComplete && (
-              <Button size="sm" onClick={() => setShowCompleteForm(true)}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Marcar como Concluída
-              </Button>
-            )}
-            {call.status === 'scheduled' && onStatusChange && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onStatusChange('no_show')}
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Não Compareceu
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onStatusChange('cancelled')}
-                >
-                  <Ban className="h-4 w-4 mr-2" />
-                  Cancelar Ligação
-                </Button>
-              </>
-            )}
 
-            {/* AI Analysis - for any call with notes */}
-            {onAnalyze && call.notes && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onAnalyze}
-                disabled={isAnalyzing}
-              >
-                {isAnalyzing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4 mr-2" />
-                )}
-                {call.ai_summary ? 'Re-analisar com IA' : 'Analisar com IA'}
-              </Button>
-            )}
-
-            {/* Recording Upload */}
-            {onRecordingUpload && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isUploadingRecording}
-                onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.accept = 'audio/*'
-                  input.onchange = (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0]
-                    if (file) onRecordingUpload(file)
-                  }
-                  input.click()
-                }}
-              >
-                {isUploadingRecording ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4 mr-2" />
-                )}
-                {call.recording_url ? 'Atualizar Gravação' : 'Enviar Gravação'}
-              </Button>
-            )}
-          </div>
-        )}
+          {!hasAnalysis && call.notes && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={(e) => { e.stopPropagation(); onAnalyze() }}
+              disabled={isAnalyzing}
+            >
+              {isAnalyzing ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-1" />
+              )}
+              Analisar
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Call Detail Dialog
+// ──────────────────────────────────────────────
+
+interface CallDetailDialogProps {
+  call: (Call & { client?: Client }) | null
+  open: boolean
+  onClose: () => void
+  onStatusChange: (callId: string, status: CallResultStatus) => void
+  onAnalyze: (call: Call & { client?: Client }) => void
+  isAnalyzing?: boolean
+}
+
+function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, isAnalyzing }: CallDetailDialogProps) {
+  const [activeSection, setActiveSection] = useState<string>('resumo')
+
+  if (!call) return null
+
+  const analysis = call.ai_analysis as CallAnalysisFull | undefined
+  const hasAnalysis = !!analysis?.nota_geral
+  const score = analysis?.nota_geral || 0
+  const resultStatus = getResultStatus(call)
+
+  const clientName = call.client?.name ||
+    analysis?.identificacao?.nome_lead ||
+    'Call'
+
+  const sections = [
+    { key: 'resumo', label: 'Resumo', icon: <FileText className="h-4 w-4" /> },
+    { key: 'etapas', label: 'Etapas', icon: <Target className="h-4 w-4" /> },
+    { key: 'checklist', label: 'Checklist', icon: <ShieldAlert className="h-4 w-4" /> },
+    { key: 'plano', label: 'Plano de Ação', icon: <Zap className="h-4 w-4" /> },
+    { key: 'dados', label: 'Dados Extraídos', icon: <BarChart3 className="h-4 w-4" /> }
+  ]
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+        {/* Header */}
+        <div className="sticky top-0 bg-background z-10 border-b p-6 pb-4">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <DialogTitle className="text-xl">{clientName}</DialogTitle>
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <Badge variant="outline" className="text-xs">
+                    {formatDate(call.scheduled_at)}
+                  </Badge>
+                  {analysis?.identificacao?.produto_ofertado && analysis.identificacao.produto_ofertado !== 'nao_informado' && (
+                    <Badge variant="secondary" className="text-xs">
+                      {analysis.identificacao.produto_ofertado}
+                    </Badge>
+                  )}
+                  {analysis?.dados_extraidos?.nicho_profissao && analysis.dados_extraidos.nicho_profissao !== 'nao_informado' && (
+                    <Badge variant="secondary" className="text-xs">
+                      {analysis.dados_extraidos.nicho_profissao}
+                    </Badge>
+                  )}
+                  {analysis?.framework_selecionado && (
+                    <Badge variant="outline" className="text-xs text-primary border-primary/30">
+                      {analysis.framework_selecionado}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                {/* Status Selector */}
+                <Select
+                  value={resultStatus}
+                  onValueChange={(v) => onStatusChange(call.id, v as CallResultStatus)}
+                >
+                  <SelectTrigger className="w-[130px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(RESULT_STATUS_BADGES).map(([key, { label }]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Score Circle */}
+                {hasAnalysis && (
+                  <div className={cn(
+                    'flex items-center justify-center w-14 h-14 rounded-full border-2 font-bold',
+                    getScoreColor(score)
+                  )}>
+                    <div className="text-center">
+                      <div className="text-lg leading-none">{score}</div>
+                      <div className="text-[10px] font-normal opacity-70">/10</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Section Tabs */}
+          {hasAnalysis && (
+            <div className="flex gap-1 mt-4 overflow-x-auto pb-1">
+              {sections.map(s => (
+                <Button
+                  key={s.key}
+                  size="sm"
+                  variant={activeSection === s.key ? 'default' : 'ghost'}
+                  className="text-xs shrink-0"
+                  onClick={() => setActiveSection(s.key)}
+                >
+                  {s.icon}
+                  <span className="ml-1.5">{s.label}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {!hasAnalysis ? (
+            <div className="text-center py-8 space-y-4">
+              <Sparkles className="h-12 w-12 mx-auto text-muted-foreground" />
+              <div>
+                <p className="text-lg font-medium">Call ainda não analisada</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Clique abaixo para analisar esta call com IA
+                </p>
+              </div>
+              {call.notes && (
+                <Button onClick={() => onAnalyze(call)} disabled={isAnalyzing}>
+                  {isAnalyzing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
+                  Analisar com IA
+                </Button>
+              )}
+              {call.notes && (
+                <div className="mt-6 text-left">
+                  <p className="text-sm font-medium mb-2">Transcrição:</p>
+                  <div className="bg-muted/50 rounded-lg p-4 max-h-60 overflow-y-auto">
+                    <p className="text-sm whitespace-pre-wrap">{call.notes}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : activeSection === 'resumo' ? (
+            <ResumoSection analysis={analysis!} call={call} />
+          ) : activeSection === 'etapas' ? (
+            <EtapasSection analysis={analysis!} />
+          ) : activeSection === 'checklist' ? (
+            <ChecklistSection analysis={analysis!} />
+          ) : activeSection === 'plano' ? (
+            <PlanoSection analysis={analysis!} />
+          ) : activeSection === 'dados' ? (
+            <DadosSection analysis={analysis!} />
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Detail Dialog Sections
+// ──────────────────────────────────────────────
+
+function ResumoSection({ analysis, call }: { analysis: CallAnalysisFull; call: Call }) {
+  return (
+    <div className="space-y-6">
+      {/* Nota Geral + Justificativa */}
+      <div className="rounded-lg border p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Star className="h-5 w-5 text-primary" />
+          <span className="font-semibold">Nota Geral: {analysis.nota_geral}/10</span>
+        </div>
+        {analysis.justificativa_nota_geral && (
+          <ul className="space-y-1 ml-8">
+            {analysis.justificativa_nota_geral.map((j, i) => (
+              <li key={i} className="text-sm text-muted-foreground">{j}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Venda info */}
+      {analysis.identificacao?.houve_venda && (
+        <div className={cn(
+          'rounded-lg border p-4',
+          analysis.identificacao.houve_venda === 'sim' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' :
+          analysis.identificacao.houve_venda === 'nao' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
+          'bg-muted/50'
+        )}>
+          <span className="font-semibold text-sm">
+            {analysis.identificacao.houve_venda === 'sim' ? 'Venda Realizada' :
+             analysis.identificacao.houve_venda === 'nao' ? 'Venda Não Realizada' :
+             'Resultado: Não informado'}
+          </span>
+        </div>
+      )}
+
+      {/* Ponto de Perda */}
+      {analysis.ponto_de_perda_da_venda && analysis.ponto_de_perda_da_venda !== 'null' && (
+        <div className="rounded-lg border border-red-200 dark:border-red-800 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <span className="font-semibold text-sm text-red-700 dark:text-red-400">Ponto de Perda da Venda</span>
+          </div>
+          <p className="text-sm font-medium ml-6">
+            Etapa: {ETAPA_LABELS[analysis.ponto_de_perda_da_venda] || analysis.ponto_de_perda_da_venda}
+          </p>
+          {analysis.sinais_da_perda && analysis.sinais_da_perda.length > 0 && (
+            <ul className="ml-6 space-y-1">
+              {analysis.sinais_da_perda.map((s, i) => (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-1.5">
+                  <ArrowRight className="h-3 w-3 mt-1 shrink-0 text-red-400" />
+                  {s}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Se Vendeu */}
+      {analysis.se_vendeu?.porque_comprou && analysis.se_vendeu.porque_comprou.length > 0 && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Award className="h-4 w-4 text-green-500" />
+            <span className="font-semibold text-sm text-green-700 dark:text-green-400">Por que comprou</span>
+          </div>
+          {analysis.se_vendeu.porque_comprou.map((m, i) => (
+            <div key={i} className="ml-6 text-sm">
+              <span className="font-medium">{m.motivo}</span>
+              {m.evidencia && <span className="text-muted-foreground"> — "{m.evidencia}"</span>}
+            </div>
+          ))}
+          {analysis.se_vendeu.gatilhos_que_mais_pesaram && (
+            <div className="ml-6 flex flex-wrap gap-1 mt-2">
+              {analysis.se_vendeu.gatilhos_que_mais_pesaram.map((g, i) => (
+                <Badge key={i} variant="outline" className="text-xs">{g}</Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Maiores Acertos */}
+      {analysis.maiores_acertos && analysis.maiores_acertos.length > 0 && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-green-600" />
+            <span className="font-semibold text-sm text-green-700 dark:text-green-400">Maiores Acertos</span>
+          </div>
+          {analysis.maiores_acertos.map((a, i) => (
+            <div key={i} className="ml-6 rounded-lg bg-green-50 dark:bg-green-900/10 p-3 space-y-1">
+              <p className="text-sm font-medium">{a.acerto}</p>
+              {a.evidencia && a.evidencia !== 'nao_informado' && (
+                <p className="text-xs text-muted-foreground italic">"{a.evidencia}"</p>
+              )}
+              {a.como_repetir && a.como_repetir !== 'nao_informado' && (
+                <p className="text-xs text-green-700 dark:text-green-400">Como repetir: {a.como_repetir}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Maiores Erros */}
+      {analysis.maiores_erros && analysis.maiores_erros.length > 0 && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="h-4 w-4 text-red-600" />
+            <span className="font-semibold text-sm text-red-700 dark:text-red-400">Maiores Erros</span>
+          </div>
+          {analysis.maiores_erros.map((e, i) => (
+            <div key={i} className="ml-6 rounded-lg bg-red-50 dark:bg-red-900/10 p-3 space-y-2">
+              <p className="text-sm font-medium">{e.erro}</p>
+              {e.evidencia && e.evidencia !== 'nao_informado' && (
+                <p className="text-xs text-muted-foreground italic">"{e.evidencia}"</p>
+              )}
+              {e.impacto && e.impacto !== 'nao_informado' && (
+                <p className="text-xs text-red-700 dark:text-red-400">Impacto: {e.impacto}</p>
+              )}
+              {e.frase_pronta && (
+                <div className="text-xs space-y-1 mt-2 border-l-2 border-red-300 pl-3">
+                  <p><span className="font-medium text-red-600">ANTES:</span> {e.frase_pronta.antes}</p>
+                  <p><span className="font-medium text-green-600">DEPOIS:</span> {e.frase_pronta.depois}</p>
+                </div>
+              )}
+              {e.como_corrigir && e.como_corrigir.length > 0 && (
+                <ul className="text-xs space-y-0.5 mt-1">
+                  {e.como_corrigir.map((c, ci) => (
+                    <li key={ci} className="flex items-start gap-1">
+                      <ArrowRight className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Dor Principal */}
+      {analysis.dados_extraidos?.dor_principal_declarada?.texto &&
+       analysis.dados_extraidos.dor_principal_declarada.texto !== 'nao_informado' && (
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Target className="h-4 w-4 text-primary" />
+            <span className="font-semibold text-sm">Principal Dor</span>
+          </div>
+          <p className="text-sm ml-6">{analysis.dados_extraidos.dor_principal_declarada.texto}</p>
+          {analysis.dados_extraidos.dor_principal_declarada.evidencia &&
+           analysis.dados_extraidos.dor_principal_declarada.evidencia !== 'nao_informado' && (
+            <p className="text-xs text-muted-foreground ml-6 mt-1 italic">
+              "{analysis.dados_extraidos.dor_principal_declarada.evidencia}"
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Transcrição */}
+      {call.notes && (
+        <details className="rounded-lg border">
+          <summary className="p-4 cursor-pointer font-semibold text-sm flex items-center gap-2">
+            <Eye className="h-4 w-4" />
+            Ver Transcrição Completa
+          </summary>
+          <div className="px-4 pb-4">
+            <div className="bg-muted/50 rounded-lg p-4 max-h-60 overflow-y-auto">
+              <p className="text-sm whitespace-pre-wrap">{call.notes}</p>
+            </div>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function EtapasSection({ analysis }: { analysis: CallAnalysisFull }) {
+  const [expandedEtapa, setExpandedEtapa] = useState<string | null>(null)
+
+  if (!analysis.analise_por_etapa) {
+    return <p className="text-sm text-muted-foreground">Análise por etapa não disponível</p>
+  }
+
+  const etapas = Object.entries(analysis.analise_por_etapa)
+
+  return (
+    <div className="space-y-3">
+      {etapas.map(([key, etapa]) => {
+        if (!etapa || typeof etapa !== 'object') return null
+        const isExpanded = expandedEtapa === key
+        const nota = etapa.nota ?? 0
+
+        return (
+          <div key={key} className="rounded-lg border overflow-hidden">
+            <button
+              onClick={() => setExpandedEtapa(isExpanded ? null : key)}
+              className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border',
+                  getScoreColor(nota)
+                )}>
+                  {nota}
+                </div>
+                <div className="text-left">
+                  <span className="font-medium text-sm">{ETAPA_LABELS[key] || key}</span>
+                  {etapa.aconteceu && (
+                    <Badge
+                      variant="outline"
+                      className={cn('ml-2 text-xs',
+                        etapa.aconteceu === 'sim' ? 'text-green-600 border-green-300' :
+                        etapa.aconteceu === 'parcial' ? 'text-yellow-600 border-yellow-300' :
+                        'text-red-600 border-red-300'
+                      )}
+                    >
+                      {etapa.aconteceu === 'sim' ? 'Sim' : etapa.aconteceu === 'parcial' ? 'Parcial' : 'Não'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+
+            {isExpanded && (
+              <div className="p-4 pt-0 space-y-3 border-t">
+                {etapa.funcao_cumprida && (
+                  <p className="text-sm text-muted-foreground">{etapa.funcao_cumprida}</p>
+                )}
+
+                {/* Pontos Fortes */}
+                {etapa.ponto_forte && etapa.ponto_forte.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-green-600">Pontos Fortes:</span>
+                    <ul className="mt-1">
+                      {etapa.ponto_forte.map((p, i) => (
+                        <li key={i} className="text-sm flex items-start gap-1.5">
+                          <CheckCircle2 className="h-3 w-3 mt-1 text-green-500 shrink-0" />
+                          {p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Pontos Fracos */}
+                {etapa.ponto_fraco && etapa.ponto_fraco.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-red-600">Pontos Fracos:</span>
+                    <ul className="mt-1">
+                      {etapa.ponto_fraco.map((p, i) => (
+                        <li key={i} className="text-sm flex items-start gap-1.5">
+                          <XCircle className="h-3 w-3 mt-1 text-red-500 shrink-0" />
+                          {p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Erro de Execução */}
+                {etapa.erro_de_execucao && etapa.erro_de_execucao !== 'nao_informado' && (
+                  <div className="bg-red-50 dark:bg-red-900/10 rounded p-2">
+                    <span className="text-xs font-semibold text-red-600">Erro:</span>
+                    <p className="text-sm">{etapa.erro_de_execucao}</p>
+                    {etapa.impacto_no_lead && etapa.impacto_no_lead !== 'nao_informado' && (
+                      <p className="text-xs text-red-600 mt-1">Impacto: {etapa.impacto_no_lead}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Frase Melhor (Antes/Depois) */}
+                {etapa.frase_melhor && (etapa.frase_melhor.antes || etapa.frase_melhor.depois) && (
+                  <div className="border-l-2 border-primary pl-3 space-y-1">
+                    <span className="text-xs font-semibold">Antes vs Depois:</span>
+                    {etapa.frase_melhor.antes && (
+                      <p className="text-xs"><span className="text-red-600 font-medium">ANTES:</span> {etapa.frase_melhor.antes}</p>
+                    )}
+                    {etapa.frase_melhor.depois && (
+                      <p className="text-xs"><span className="text-green-600 font-medium">DEPOIS:</span> {etapa.frase_melhor.depois}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Como Corrigir */}
+                {etapa.como_corrigir && etapa.como_corrigir.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-primary">Como Corrigir:</span>
+                    <ul className="mt-1 space-y-0.5">
+                      {etapa.como_corrigir.map((c, i) => (
+                        <li key={i} className="text-xs flex items-start gap-1.5">
+                          <ArrowRight className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Perguntas de Aprofundamento */}
+                {etapa.perguntas_de_aprofundamento && etapa.perguntas_de_aprofundamento.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-muted-foreground">Perguntas sugeridas:</span>
+                    <ul className="mt-1 space-y-0.5">
+                      {etapa.perguntas_de_aprofundamento.map((q, i) => (
+                        <li key={i} className="text-xs flex items-start gap-1.5 text-muted-foreground">
+                          <MessageSquare className="h-3 w-3 mt-0.5 shrink-0" />
+                          {q}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Risco Principal */}
+                {etapa.risco_principal_da_etapa && etapa.risco_principal_da_etapa !== 'nao_informado' && (
+                  <div className="text-xs bg-yellow-50 dark:bg-yellow-900/10 rounded p-2">
+                    <span className="font-semibold text-yellow-700 dark:text-yellow-400">Risco principal:</span>
+                    <span className="ml-1">{etapa.risco_principal_da_etapa}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ChecklistSection({ analysis }: { analysis: CallAnalysisFull }) {
+  if (!analysis.checklist_erros_recorrentes) {
+    return <p className="text-sm text-muted-foreground">Checklist não disponível</p>
+  }
+
+  const checkLabels: Record<string, string> = {
+    abertura_ancoragem_script: 'Abertura (Ancoragem e Script)',
+    profundidade_nao_fugir_assunto: 'Profundidade (Não fugir do assunto)',
+    emocao_e_tensao: 'Emoção e Tensão',
+    prova_social_seeds_durante_perguntas: 'Prova Social / Seeds durante perguntas',
+    objecao_real_vs_declarada: 'Objeção Real vs Declarada',
+    negociacao_maximizar_receita: 'Negociação (Maximizar Receita)'
+  }
+
+  const checks = Object.entries(analysis.checklist_erros_recorrentes)
+
+  return (
+    <div className="space-y-3">
+      {checks.map(([key, check]) => {
+        if (!check || typeof check !== 'object') return null
+
+        return (
+          <div key={key} className="rounded-lg border p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              {getCheckStatusIcon(check.status)}
+              <span className="font-medium text-sm">{checkLabels[key] || key}</span>
+              <Badge
+                variant="outline"
+                className={cn('text-xs ml-auto',
+                  check.status === 'ok' ? 'text-green-600 border-green-300' :
+                  check.status === 'parcial' ? 'text-yellow-600 border-yellow-300' :
+                  'text-red-600 border-red-300'
+                )}
+              >
+                {check.status === 'ok' ? 'OK' : check.status === 'parcial' ? 'Parcial' : 'Falhou'}
+              </Badge>
+            </div>
+
+            {check.evidencias && check.evidencias.length > 0 && (
+              <div className="ml-6 space-y-1">
+                {check.evidencias.map((e, i) => (
+                  <p key={i} className="text-xs text-muted-foreground italic">"{e}"</p>
+                ))}
+              </div>
+            )}
+
+            {check.correcao && (
+              <div className="ml-6 text-xs bg-primary/5 rounded p-2">
+                <span className="font-medium">Correção:</span> {check.correcao}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PlanoSection({ analysis }: { analysis: CallAnalysisFull }) {
+  const plano = analysis.plano_de_acao_direto
+  if (!plano) {
+    return <p className="text-sm text-muted-foreground">Plano de ação não disponível</p>
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Ajuste #1 */}
+      {plano.ajuste_numero_1 && (
+        <div className="rounded-lg border border-primary/30 p-4 space-y-3 bg-primary/5">
+          <div className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-primary" />
+            <span className="font-semibold">Ajuste N°1 (Prioridade Máxima)</span>
+          </div>
+          {plano.ajuste_numero_1.diagnostico && (
+            <p className="text-sm ml-7">{plano.ajuste_numero_1.diagnostico}</p>
+          )}
+          {plano.ajuste_numero_1.o_que_fazer_na_proxima_call && (
+            <ul className="ml-7 space-y-1">
+              {plano.ajuste_numero_1.o_que_fazer_na_proxima_call.map((a, i) => (
+                <li key={i} className="text-sm flex items-start gap-1.5">
+                  <ArrowRight className="h-3 w-3 mt-1 shrink-0 text-primary" />
+                  {a}
+                </li>
+              ))}
+            </ul>
+          )}
+          {plano.ajuste_numero_1.script_30_segundos && (
+            <div className="ml-7 bg-background rounded-lg p-3 border">
+              <span className="text-xs font-semibold text-muted-foreground">Script 30s:</span>
+              <p className="text-sm mt-1 italic">"{plano.ajuste_numero_1.script_30_segundos}"</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Treino Recomendado */}
+      {plano.treino_recomendado && plano.treino_recomendado.length > 0 && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            <span className="font-semibold text-sm">Treino Recomendado</span>
+          </div>
+          {plano.treino_recomendado.map((t, i) => (
+            <div key={i} className="ml-6 rounded bg-muted/50 p-3 space-y-1">
+              <p className="text-sm font-medium">{t.habilidade}</p>
+              {t.como_treinar && <p className="text-xs text-muted-foreground">{t.como_treinar}</p>}
+              {t.meta_objetiva && (
+                <p className="text-xs"><span className="font-medium">Meta:</span> {t.meta_objetiva}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Próxima Ação com Lead */}
+      {plano.proxima_acao_com_lead && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            <span className="font-semibold text-sm">Próxima Ação com Lead</span>
+            {plano.proxima_acao_com_lead.status && (
+              <Badge variant="outline" className="text-xs ml-2">
+                {plano.proxima_acao_com_lead.status}
+              </Badge>
+            )}
+          </div>
+          {plano.proxima_acao_com_lead.passo && (
+            <p className="text-sm ml-6">{plano.proxima_acao_com_lead.passo}</p>
+          )}
+          {plano.proxima_acao_com_lead.mensagem_sugerida_whats && (
+            <div className="ml-6 bg-green-50 dark:bg-green-900/10 rounded-lg p-3 border border-green-200 dark:border-green-800">
+              <span className="text-xs font-semibold text-green-700 dark:text-green-400">Mensagem sugerida (WhatsApp):</span>
+              <p className="text-sm mt-1">{plano.proxima_acao_com_lead.mensagem_sugerida_whats}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DadosSection({ analysis }: { analysis: CallAnalysisFull }) {
+  const dados = analysis.dados_extraidos
+  if (!dados) {
+    return <p className="text-sm text-muted-foreground">Dados extraídos não disponíveis</p>
+  }
+
+  const fields: { label: string; value: string | undefined }[] = [
+    { label: 'Nicho/Profissão', value: dados.nicho_profissao },
+    { label: 'Modelo de Venda', value: dados.modelo_de_venda },
+    { label: 'Ticket Médio', value: dados.ticket_medio },
+    { label: 'Faturamento Bruto', value: dados.faturamento_mensal_bruto },
+    { label: 'Faturamento Líquido', value: dados.faturamento_mensal_liquido },
+    { label: 'Equipe', value: dados.equipe },
+    { label: 'Estrutura Comercial', value: dados.estrutura_comercial },
+    { label: 'Objetivo 12 Meses', value: dados.objetivo_12_meses },
+    { label: 'Urgência (0-10)', value: dados.urgencia_declarada },
+    { label: 'Importância (0-10)', value: dados.importancia_declarada }
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* Identificação */}
+      <div className="rounded-lg border p-4 space-y-2">
+        <span className="font-semibold text-sm">Identificação</span>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div><span className="text-muted-foreground">Lead:</span> {analysis.identificacao?.nome_lead || 'N/I'}</div>
+          <div><span className="text-muted-foreground">Closer:</span> {analysis.identificacao?.nome_closer || 'N/I'}</div>
+          <div><span className="text-muted-foreground">Produto:</span> {analysis.identificacao?.produto_ofertado || 'N/I'}</div>
+          <div><span className="text-muted-foreground">Venda:</span> {analysis.identificacao?.houve_venda || 'N/I'}</div>
+        </div>
+      </div>
+
+      {/* Dados Grid */}
+      <div className="rounded-lg border p-4 space-y-2">
+        <span className="font-semibold text-sm">Dados da Empresa/Lead</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {fields.map((f, i) => (
+            f.value && f.value !== 'nao_informado' ? (
+              <div key={i} className="text-sm py-1">
+                <span className="text-muted-foreground">{f.label}:</span>
+                <span className="ml-1 font-medium">{f.value}</span>
+              </div>
+            ) : null
+          ))}
+        </div>
+      </div>
+
+      {/* Canais de Aquisição */}
+      {dados.canais_aquisicao && dados.canais_aquisicao.length > 0 && (
+        <div className="rounded-lg border p-4 space-y-2">
+          <span className="font-semibold text-sm">Canais de Aquisição</span>
+          <div className="flex flex-wrap gap-1">
+            {dados.canais_aquisicao.map((c, i) => (
+              <Badge key={i} variant="secondary" className="text-xs">{c}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dor Profunda */}
+      {dados.dor_profunda?.texto && dados.dor_profunda.texto !== 'nao_informado' && (
+        <div className="rounded-lg border p-4 space-y-1">
+          <span className="font-semibold text-sm">Dor Profunda</span>
+          <p className="text-sm">{dados.dor_profunda.texto}</p>
+          {dados.dor_profunda.evidencia && dados.dor_profunda.evidencia !== 'nao_informado' && (
+            <p className="text-xs text-muted-foreground italic">"{dados.dor_profunda.evidencia}"</p>
+          )}
+        </div>
+      )}
+
+      {/* Objeções */}
+      {dados.objecoes_levantadas && dados.objecoes_levantadas.length > 0 && (
+        <div className="rounded-lg border p-4 space-y-2">
+          <span className="font-semibold text-sm">Objeções Levantadas</span>
+          {dados.objecoes_levantadas.map((o, i) => (
+            <div key={i} className="text-sm py-1 border-b last:border-0">
+              <span className="font-medium">{o.objecao}</span>
+              {o.evidencia && o.evidencia !== 'nao_informado' && (
+                <span className="text-xs text-muted-foreground ml-1">— "{o.evidencia}"</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

@@ -227,6 +227,52 @@ async function driveRequest(endpoint: string, token: string): Promise<Response> 
   return response
 }
 
+export async function listRecentFiles(
+  token: string,
+  folderId?: string
+): Promise<DriveFile[]> {
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+  let query = `modifiedTime > '${thirtyDaysAgo.toISOString()}'`
+  query += ` and trashed = false`
+  query += ` and (mimeType = 'application/vnd.google-apps.document' or mimeType = 'text/plain' or mimeType contains 'text/')`
+
+  if (folderId) {
+    query += ` and '${folderId}' in parents`
+  }
+
+  const params = new URLSearchParams({
+    q: query,
+    orderBy: 'modifiedTime desc',
+    fields: 'files(id,name,mimeType,modifiedTime,size)',
+    pageSize: '100',
+    key: GOOGLE_API_KEY
+  })
+
+  const response = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken()
+      throw new Error('Token expirado. Reconecte sua conta Google.')
+    }
+    throw new Error('Falha ao listar arquivos do Drive')
+  }
+
+  const data = await response.json()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.files || []).map((f: any) => ({
+    id: f.id,
+    name: f.name,
+    mimeType: f.mimeType,
+    size: f.size,
+    modifiedTime: f.modifiedTime
+  }))
+}
+
 export async function downloadFileContent(fileId: string, mimeType: string, token: string): Promise<string> {
   // Google Docs need to be exported as plain text
   if (mimeType === 'application/vnd.google-apps.document') {
