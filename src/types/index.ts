@@ -294,6 +294,23 @@ export interface IntensivoLead {
 }
 
 // Tag types
+// Squad types
+export interface Squad {
+  id: string
+  name: string
+  description?: string
+  leader_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SquadMember {
+  id: string
+  squad_id: string
+  profile_id: string
+  created_at: string
+}
+
 export interface Tag {
   id: string
   name: string

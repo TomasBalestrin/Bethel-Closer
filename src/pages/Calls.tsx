@@ -272,7 +272,7 @@ export default function CallsPage() {
   const isSyncing = syncProgress?.status === 'importing' || syncProgress?.status === 'analyzing' || syncProgress?.status === 'connecting'
 
   // Handle sync result (shared between manual and auto sync)
-  const handleSyncResult = useCallback((result: { imported: number; analyzed: number; errors: string[] }, silent?: boolean) => {
+  const handleSyncResult = useCallback((result: { imported: number; analyzed: number; errors: { fileName: string; error: string }[] | string[] }, silent?: boolean) => {
     if (result.imported > 0 || result.analyzed > 0) {
       queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
       if (!silent) {

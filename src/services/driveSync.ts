@@ -1,4 +1,5 @@
-import { authorize, authorizeSilent, listRecentFiles, downloadFileContent, autoDetectFolder } from './googleDrive'
+import { authorize, authorizeSilent, downloadFileContent, autoDetectFolder, listFilesInFolder } from './googleDrive'
+import type { DriveFile, ListFilesOptions } from './googleDrive'
 import { supabase } from './supabase'
 import { analyzeCallTranscript } from './openai'
 import type { CallResultStatus } from '@/types'
@@ -13,19 +14,28 @@ export interface SyncProgress {
 export interface SyncResult {
   imported: number
   analyzed: number
-  errors: string[]
+  errors: SyncError[]
+}
+
+export interface SyncError {
+  fileName: string
+  error: string
+  detail?: string
+  phase: 'download' | 'insert' | 'analysis' | 'other'
 }
 
 // ── Drive config persistence ──
-// Stores: folder_id, folder_name, connected flag, last_sync timestamp
 
 const STORAGE_KEY = 'bethel_drive_config'
 
-interface DriveConfig {
+export interface DriveConfig {
   folderId: string | null
   folderName: string | null
   connected: boolean
   lastSync: string | null
+  connectedAt: string | null
+  fileType: string | null    // MIME type filter, e.g., 'application/vnd.google-apps.document'
+  namePattern: string | null // Name must contain this string
 }
 
 function getConfig(): DriveConfig {
@@ -35,7 +45,15 @@ function getConfig(): DriveConfig {
   } catch {
     // corrupt data
   }
-  return { folderId: null, folderName: null, connected: false, lastSync: null }
+  return {
+    folderId: null,
+    folderName: null,
+    connected: false,
+    lastSync: null,
+    connectedAt: null,
+    fileType: null,
+    namePattern: null
+  }
 }
 
 function saveConfig(updates: Partial<DriveConfig>): void {
@@ -53,7 +71,8 @@ function migrateOldConfig(): void {
 }
 migrateOldConfig()
 
-// Public API for Drive config
+// ── Public API for Drive config ──
+
 export function getDriveFolderId(): string | null {
   return getConfig().folderId
 }
@@ -70,11 +89,16 @@ export function getDriveConfig(): DriveConfig {
   return getConfig()
 }
 
+export function updateDriveConfig(updates: Partial<DriveConfig>): void {
+  saveConfig(updates)
+}
+
 export function disconnectDrive(): void {
   localStorage.removeItem(STORAGE_KEY)
 }
 
-// Get already-imported Drive file IDs
+// ── Already-imported file tracking ──
+
 async function getImportedFileIds(closerId: string): Promise<Set<string>> {
   const { data } = await supabase
     .from('calls')
@@ -91,7 +115,8 @@ async function getImportedFileIds(closerId: string): Promise<Set<string>> {
   return ids
 }
 
-// Derive result_status from AI analysis
+// ── AI analysis helpers ──
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function deriveResultStatus(analysis: Record<string, any>): CallResultStatus {
   if (analysis.identificacao?.houve_venda === 'sim') {
@@ -101,37 +126,37 @@ export function deriveResultStatus(analysis: Record<string, any>): CallResultSta
   if (leadStatus === 'follow_up') return 'follow_up'
   if (leadStatus === 'desqualificado') return 'perdida'
   if (leadStatus === 'fechado') return 'vendida'
-  // If analyzed but no clear status, default to proposta
   if (analysis.nota_geral !== undefined) return 'proposta'
   return 'pendente'
 }
 
-// Connect to Drive for the first time (with popup) + auto-detect folder
+// ── Connect ──
+
 export async function connectDrive(
   onProgress?: (progress: SyncProgress) => void
 ): Promise<{ token: string; folderId: string | null; folderName: string | null }> {
   onProgress?.({ status: 'connecting', message: 'Conectando ao Google Drive...' })
   const token = await authorize()
 
-  // Auto-detect folder
   onProgress?.({ status: 'listing', message: 'Detectando pasta de gravações...' })
   const folder = await autoDetectFolder(token)
 
   const folderId = folder?.id || null
   const folderName = folder?.name || null
 
-  // Save config
   saveConfig({
     folderId,
     folderName,
     connected: true,
-    lastSync: null
+    lastSync: null,
+    connectedAt: new Date().toISOString()
   })
 
   return { token, folderId, folderName }
 }
 
-// Try silent sync (no popup) - returns null if can't auth silently
+// ── Silent sync ──
+
 export async function trySilentSync(
   closerId: string,
   onProgress?: (progress: SyncProgress) => void
@@ -144,7 +169,38 @@ export async function trySilentSync(
   return syncFromDrive(closerId, onProgress, token)
 }
 
-// Main sync function
+// ── List files from configured folder with config filters ──
+
+export async function listConfiguredFiles(
+  token: string,
+  overrides?: Partial<ListFilesOptions>
+): Promise<DriveFile[]> {
+  const config = getConfig()
+  if (!config.folderId) return []
+
+  const options: ListFilesOptions = {
+    folderId: config.folderId,
+    mimeType: config.fileType || undefined,
+    nameContains: config.namePattern || undefined,
+    ...overrides
+  }
+
+  const result = await listFilesInFolder(token, options)
+
+  // Paginate to get all files
+  let allFiles = result.files
+  let nextToken = result.nextPageToken
+  while (nextToken) {
+    const more = await listFilesInFolder(token, { ...options, pageToken: nextToken })
+    allFiles = [...allFiles, ...more.files]
+    nextToken = more.nextPageToken
+  }
+
+  return allFiles
+}
+
+// ── Main sync function ──
+
 export async function syncFromDrive(
   closerId: string,
   onProgress?: (progress: SyncProgress) => void,
@@ -159,7 +215,6 @@ export async function syncFromDrive(
       token = await authorize()
     }
 
-    // If first sync or no folder configured, auto-detect
     const config = getConfig()
     let folderId = config.folderId
 
@@ -172,11 +227,23 @@ export async function syncFromDrive(
       }
     }
 
-    onProgress?.({ status: 'listing', message: 'Listando arquivos recentes...' })
-    const files = await listRecentFiles(token, folderId || undefined)
+    if (!folderId) {
+      onProgress?.({ status: 'error', message: 'Nenhuma pasta configurada. Configure uma pasta primeiro.' })
+      result.errors.push({ fileName: '', error: 'Nenhuma pasta configurada', phase: 'other' })
+      return result
+    }
+
+    onProgress?.({ status: 'listing', message: 'Listando arquivos...' })
+
+    // Use config filters (file type + name pattern)
+    const files = await listConfiguredFiles(token, {
+      folderId,
+      // Only sync files modified after connectedAt (auto-sync behavior)
+      modifiedAfter: config.connectedAt || undefined
+    })
 
     if (files.length === 0) {
-      onProgress?.({ status: 'done', message: 'Nenhum arquivo encontrado no Drive' })
+      onProgress?.({ status: 'done', message: 'Nenhum arquivo novo encontrado' })
       return result
     }
 
@@ -200,10 +267,26 @@ export async function syncFromDrive(
           total: newFiles.length
         })
 
-        const content = await downloadFileContent(file.id, file.mimeType, token)
+        let content: string
+        try {
+          content = await downloadFileContent(file.id, file.mimeType, token)
+        } catch (dlError) {
+          result.errors.push({
+            fileName: file.name,
+            error: 'Falha ao baixar arquivo',
+            detail: dlError instanceof Error ? dlError.message : String(dlError),
+            phase: 'download'
+          })
+          continue
+        }
 
         if (!content || content.trim().length < 50) {
-          result.errors.push(`${file.name}: conteúdo muito curto`)
+          result.errors.push({
+            fileName: file.name,
+            error: 'Conteúdo muito curto ou vazio',
+            detail: `O arquivo tem apenas ${content?.trim().length || 0} caracteres. Mínimo necessário: 50.`,
+            phase: 'download'
+          })
           continue
         }
 
@@ -222,7 +305,12 @@ export async function syncFromDrive(
           .single()
 
         if (insertError) {
-          result.errors.push(`${file.name}: ${insertError.message}`)
+          result.errors.push({
+            fileName: file.name,
+            error: 'Falha ao salvar no banco de dados',
+            detail: insertError.message + (insertError.details ? ` | ${insertError.details}` : ''),
+            phase: 'insert'
+          })
           continue
         }
 
@@ -260,14 +348,23 @@ export async function syncFromDrive(
 
           result.analyzed++
         } catch (aiError) {
-          result.errors.push(`${file.name}: Erro IA - ${aiError instanceof Error ? aiError.message : 'erro desconhecido'}`)
+          result.errors.push({
+            fileName: file.name,
+            error: 'Falha na análise de IA',
+            detail: aiError instanceof Error ? aiError.message : String(aiError),
+            phase: 'analysis'
+          })
         }
       } catch (fileError) {
-        result.errors.push(`${file.name}: ${fileError instanceof Error ? fileError.message : 'erro desconhecido'}`)
+        result.errors.push({
+          fileName: file.name,
+          error: 'Erro inesperado',
+          detail: fileError instanceof Error ? fileError.message : String(fileError),
+          phase: 'other'
+        })
       }
     }
 
-    // Mark drive as connected and save last sync time
     saveConfig({ connected: true, lastSync: new Date().toISOString() })
 
     onProgress?.({
@@ -278,9 +375,144 @@ export async function syncFromDrive(
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Erro desconhecido'
-    result.errors.push(msg)
+    result.errors.push({ fileName: '', error: msg, phase: 'other' })
     onProgress?.({ status: 'error', message: msg })
   }
+
+  return result
+}
+
+// ── Import specific files (historical / manual selection) ──
+
+export async function importSpecificFiles(
+  closerId: string,
+  files: DriveFile[],
+  token: string,
+  onProgress?: (progress: SyncProgress) => void
+): Promise<SyncResult> {
+  const result: SyncResult = { imported: 0, analyzed: 0, errors: [] }
+
+  const importedIds = await getImportedFileIds(closerId)
+  const newFiles = files.filter(f => !importedIds.has(f.id))
+
+  if (newFiles.length === 0) {
+    onProgress?.({ status: 'done', message: 'Todos os arquivos selecionados já foram importados' })
+    return result
+  }
+
+  for (let i = 0; i < newFiles.length; i++) {
+    const file = newFiles[i]
+
+    try {
+      onProgress?.({
+        status: 'importing',
+        message: `Importando: ${file.name}`,
+        current: i + 1,
+        total: newFiles.length
+      })
+
+      let content: string
+      try {
+        content = await downloadFileContent(file.id, file.mimeType, token)
+      } catch (dlError) {
+        result.errors.push({
+          fileName: file.name,
+          error: 'Falha ao baixar arquivo',
+          detail: dlError instanceof Error ? dlError.message : String(dlError),
+          phase: 'download'
+        })
+        continue
+      }
+
+      if (!content || content.trim().length < 50) {
+        result.errors.push({
+          fileName: file.name,
+          error: 'Conteúdo muito curto ou vazio',
+          detail: `O arquivo tem apenas ${content?.trim().length || 0} caracteres. Mínimo necessário: 50.`,
+          phase: 'download'
+        })
+        continue
+      }
+
+      const { data: callData, error: insertError } = await supabase
+        .from('calls')
+        .insert({
+          closer_id: closerId,
+          scheduled_at: file.modifiedTime || new Date().toISOString(),
+          status: 'completed',
+          notes: content,
+          recording_url: `drive://${file.id}`,
+          ai_analysis: { drive_file_id: file.id, drive_file_name: file.name, result_status: 'pendente' }
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        result.errors.push({
+          fileName: file.name,
+          error: 'Falha ao salvar no banco de dados',
+          detail: insertError.message,
+          phase: 'insert'
+        })
+        continue
+      }
+
+      result.imported++
+
+      try {
+        onProgress?.({
+          status: 'analyzing',
+          message: `Analisando com IA: ${file.name}`,
+          current: i + 1,
+          total: newFiles.length
+        })
+
+        const analysis = await analyzeCallTranscript(content)
+        const resultStatus = deriveResultStatus(analysis)
+
+        await supabase
+          .from('calls')
+          .update({
+            ai_summary: [
+              analysis.identificacao?.produto_ofertado,
+              analysis.dados_extraidos?.nicho_profissao,
+              `Nota: ${analysis.nota_geral}/10`
+            ].filter(Boolean).join(' | '),
+            ai_analysis: {
+              ...analysis,
+              result_status: resultStatus,
+              drive_file_id: file.id,
+              drive_file_name: file.name
+            },
+            quality_score: analysis.nota_geral || 0
+          })
+          .eq('id', callData.id)
+
+        result.analyzed++
+      } catch (aiError) {
+        result.errors.push({
+          fileName: file.name,
+          error: 'Falha na análise de IA',
+          detail: aiError instanceof Error ? aiError.message : String(aiError),
+          phase: 'analysis'
+        })
+      }
+    } catch (fileError) {
+      result.errors.push({
+        fileName: file.name,
+        error: 'Erro inesperado',
+        detail: fileError instanceof Error ? fileError.message : String(fileError),
+        phase: 'other'
+      })
+    }
+  }
+
+  onProgress?.({
+    status: 'done',
+    message: `Concluído! ${result.imported} importados, ${result.analyzed} analisados`,
+    current: newFiles.length,
+    total: newFiles.length
+  })
 
   return result
 }
