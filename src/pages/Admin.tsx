@@ -555,31 +555,49 @@ function CreateCloserDialog({
 
     setIsCreating(true)
     try {
-      // Create auth user
+      // Create auth user (without metadata to avoid trigger conflicts)
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name }
-        }
+        email: email.trim(),
+        password
       })
 
-      if (error) throw error
+      if (error) {
+        // Handle common Supabase auth errors with friendly messages
+        if (error.message.includes('Database error')) {
+          throw new Error('Erro no banco de dados. Verifique se o email já está cadastrado ou contate o suporte.')
+        }
+        if (error.message.includes('already registered')) {
+          throw new Error('Este email já está cadastrado no sistema.')
+        }
+        throw error
+      }
 
       if (data.user) {
+        // Wait briefly for any auth trigger to complete
+        await new Promise(resolve => setTimeout(resolve, 500))
+
         // Update profile with name, phone, role
         const { error: profileError } = await supabase
           .from('profiles')
           .upsert({
             user_id: data.user.id,
-            name,
-            email,
+            name: name.trim(),
+            email: email.trim(),
             phone: phone || null,
             role
           }, { onConflict: 'user_id' })
 
         if (profileError) {
-          // Profile upsert might fail if trigger already created it
+          // Try update instead of upsert (trigger may have created the row)
+          await supabase
+            .from('profiles')
+            .update({
+              name: name.trim(),
+              email: email.trim(),
+              phone: phone || null,
+              role
+            })
+            .eq('user_id', data.user.id)
         }
       }
 
