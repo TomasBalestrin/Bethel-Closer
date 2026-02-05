@@ -2,7 +2,8 @@
 export type UserRole = 'admin' | 'closer' | 'lider'
 
 export interface User {
-  id: string
+  id: string           // auth.users.id - for authentication
+  profileId: string    // profiles.id - for data relationships (calls, clients, etc.)
   email: string
   name: string
   avatar_url?: string
