@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Upload,
@@ -16,13 +16,21 @@ import {
   Cloud,
   Shield,
   FolderOpen,
-  Zap
+  Zap,
+  Search,
+  Settings2,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Folder
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -42,6 +50,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
 import * as drive from '@/services/googleDrive'
+import type { DriveFile, DriveFolder } from '@/services/googleDrive'
+import * as sync from '@/services/driveSync'
+import type { SyncProgress, SyncResult, SyncError } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { Client } from '@/types'
@@ -95,38 +106,72 @@ export default function ImportPage() {
 }
 
 // ==========================================
-// GOOGLE DRIVE INTEGRATION (wizard style)
+// GOOGLE DRIVE INTEGRATION (folder-based auto-import)
 // ==========================================
 
-type DriveStep = 'inicio' | 'permissoes' | 'conectado'
+type DriveStep = 'inicio' | 'conectando' | 'pasta' | 'config' | 'conectado'
 
-interface ImportedFile {
-  id: string
-  name: string
-  mimeType: string
-  status: 'pending' | 'processing' | 'completed' | 'error'
-  result?: Record<string, unknown>
-  error?: string
-  importedAt: string
+const MIME_LABELS: Record<string, string> = {
+  'application/vnd.google-apps.document': 'Google Docs',
+  'text/plain': 'Arquivos de texto (.txt)',
+  '': 'Todos os tipos'
 }
 
 function GoogleDriveIntegration({ userId }: { userId?: string }) {
   const googleConfigured = drive.isConfigured()
-  const [step, setStep] = useState<DriveStep>(drive.hasValidToken() ? 'conectado' : 'inicio')
-  const [isImporting, setIsImporting] = useState(false)
-  const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() => {
-    if (!userId) return []
-    try {
-      const stored = localStorage.getItem(`bethel-drive-files-${userId}`)
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
-  })
-  const [showAnalysisDialog, setShowAnalysisDialog] = useState(false)
-  const [selectedAnalysis, setSelectedAnalysis] = useState<Record<string, unknown> | null>(null)
+  const config = sync.getDriveConfig()
 
-  const stepIndex = step === 'inicio' ? 0 : step === 'permissoes' ? 1 : 2
+  // Determine initial step
+  const getInitialStep = (): DriveStep => {
+    if (config.connected && config.folderId) return 'conectado'
+    return 'inicio'
+  }
 
-  // If Google credentials are not configured, show a message instead of the wizard
+  const [step, setStep] = useState<DriveStep>(getInitialStep)
+  const [token, setToken] = useState<string | null>(null)
+
+  // Folder selection state
+  const [suggestedFolders, setSuggestedFolders] = useState<DriveFolder[]>([])
+  const [rootFolders, setRootFolders] = useState<DriveFolder[]>([])
+  const [folderSearch, setFolderSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<DriveFolder[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedFolder, setSelectedFolder] = useState<{ id: string; name: string } | null>(
+    config.folderId && config.folderName ? { id: config.folderId, name: config.folderName } : null
+  )
+  const [loadingFolders, setLoadingFolders] = useState(false)
+
+  // Config state
+  const [fileType, setFileType] = useState(config.fileType || 'application/vnd.google-apps.document')
+  const [namePattern, setNamePattern] = useState(config.namePattern || '')
+
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null)
+  const [allErrors, setAllErrors] = useState<SyncError[]>([])
+  const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set())
+
+  // Historical files state
+  const [historicalFiles, setHistoricalFiles] = useState<DriveFile[]>([])
+  const [loadingHistorical, setLoadingHistorical] = useState(false)
+  const [selectedHistorical, setSelectedHistorical] = useState<Set<string>>(new Set())
+  const [importingHistorical, setImportingHistorical] = useState(false)
+  const [showHistorical, setShowHistorical] = useState(false)
+
+  // Settings dialog
+  const [showSettings, setShowSettings] = useState(false)
+
+  // Auto-sync on mount when connected
+  const autoSyncRan = useRef(false)
+  useEffect(() => {
+    if (step !== 'conectado' || !userId || autoSyncRan.current) return
+    autoSyncRan.current = true
+    handleSync()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, userId])
+
+  // If Google credentials are not configured
   if (!googleConfigured) {
     return (
       <Card>
@@ -164,136 +209,200 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
     )
   }
 
-  // Save files to localStorage when they change
-  const saveFiles = (files: ImportedFile[]) => {
-    setImportedFiles(files)
-    if (userId) {
-      localStorage.setItem(`bethel-drive-files-${userId}`, JSON.stringify(files.slice(0, 100)))
-    }
-  }
+  // ── Handlers ──
 
-  // Step 1 → 2: Start connection
-  const handleStartConnection = async () => {
-    setStep('permissoes')
+  const handleConnect = async () => {
+    setStep('conectando')
     try {
-      await drive.authorize()
-      setStep('conectado')
-      toast.success('Google Drive conectado com sucesso!')
+      const authToken = await drive.authorize()
+      setToken(authToken)
+
+      // Load folders for selection
+      setLoadingFolders(true)
+      const [suggested, root] = await Promise.all([
+        drive.searchFolders(authToken),
+        drive.listRootFolders(authToken)
+      ])
+      setSuggestedFolders(suggested)
+      setRootFolders(root)
+      setLoadingFolders(false)
+
+      // Auto-select best folder
+      const best = await drive.autoDetectFolder(authToken)
+      if (best) {
+        setSelectedFolder({ id: best.id, name: best.name })
+      }
+
+      setStep('pasta')
     } catch (error) {
       setStep('inicio')
       toast.error(error instanceof Error ? error.message : 'Erro ao conectar')
     }
   }
 
-  // Disconnect
-  const handleDisconnect = () => {
-    drive.clearToken()
-    setStep('inicio')
-    toast.success('Google Drive desconectado')
-  }
-
-  // Open picker and import selected files
-  const handleImportFiles = async () => {
-    setIsImporting(true)
+  const handleSearchFolders = async () => {
+    if (!token || !folderSearch.trim()) return
+    setIsSearching(true)
     try {
-      const selectedFiles = await drive.openPicker()
-      if (selectedFiles.length === 0) {
-        setIsImporting(false)
-        return
-      }
-
-      toast.info(`Processando ${selectedFiles.length} arquivo(s)...`)
-
-      const token = await drive.authorize()
-      const newFiles: ImportedFile[] = []
-
-      for (const file of selectedFiles) {
-        const importedFile: ImportedFile = {
-          id: file.id,
-          name: file.name,
-          mimeType: file.mimeType,
-          status: 'processing',
-          importedAt: new Date().toISOString()
-        }
-
-        try {
-          // Download content
-          const content = await drive.downloadFileContent(file.id, file.mimeType, token)
-
-          if (!content.trim()) {
-            importedFile.status = 'error'
-            importedFile.error = 'Arquivo vazio'
-            newFiles.push(importedFile)
-            continue
-          }
-
-          const isCSV = file.name.endsWith('.csv') || file.mimeType === 'text/csv'
-
-          if (isCSV) {
-            importedFile.status = 'completed'
-            importedFile.result = {
-              type: 'csv',
-              row_count: content.split('\n').filter(l => l.trim()).length - 1
-            }
-          } else {
-            // Analyze with AI
-            try {
-              const analysis = await analyzeCallTranscript(content)
-              importedFile.status = 'completed'
-              importedFile.result = analysis as unknown as Record<string, unknown>
-            } catch (err) {
-              importedFile.status = 'error'
-              importedFile.error = err instanceof Error ? err.message : 'Erro na análise IA'
-            }
-          }
-
-          // Try to save to Supabase
-          if (userId && importedFile.status === 'completed' && importedFile.result && !('type' in importedFile.result && importedFile.result.type === 'csv')) {
-            try {
-              await supabase.from('drive_sync_files').upsert({
-                closer_id: userId,
-                drive_file_id: file.id,
-                file_name: file.name,
-                mime_type: file.mimeType,
-                status: importedFile.status,
-                result_type: 'transcription',
-                result_data: importedFile.result,
-                synced_at: importedFile.importedAt,
-                processed_at: new Date().toISOString()
-              }, { onConflict: 'closer_id,drive_file_id' })
-            } catch { /* table may not exist */ }
-          }
-        } catch (err) {
-          importedFile.status = 'error'
-          importedFile.error = err instanceof Error ? err.message : 'Erro ao processar'
-        }
-
-        newFiles.push(importedFile)
-      }
-
-      // Merge with existing files (avoid duplicates)
-      const existingIds = new Set(importedFiles.map(f => f.id))
-      const merged = [...newFiles.filter(f => !existingIds.has(f.id)), ...importedFiles]
-      saveFiles(merged)
-
-      const successCount = newFiles.filter(f => f.status === 'completed').length
-      const errorCount = newFiles.filter(f => f.status === 'error').length
-
-      if (successCount > 0) toast.success(`${successCount} arquivo(s) importado(s) com sucesso!`)
-      if (errorCount > 0) toast.warning(`${errorCount} arquivo(s) com erro`)
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Token expirado')) {
-        setStep('inicio')
-      }
-      toast.error(error instanceof Error ? error.message : 'Erro ao importar')
+      const results = await drive.searchFoldersByName(token, folderSearch.trim())
+      setSearchResults(results)
+    } catch {
+      toast.error('Erro ao buscar pastas')
     } finally {
-      setIsImporting(false)
+      setIsSearching(false)
     }
   }
 
+  const handleConfirmFolder = () => {
+    if (!selectedFolder) return
+    setStep('config')
+  }
+
+  const handleSaveConfig = () => {
+    if (!selectedFolder) return
+
+    sync.updateDriveConfig({
+      folderId: selectedFolder.id,
+      folderName: selectedFolder.name,
+      connected: true,
+      connectedAt: new Date().toISOString(),
+      fileType: fileType || null,
+      namePattern: namePattern.trim() || null
+    })
+
+    setStep('conectado')
+    toast.success('Google Drive configurado! Sincronizando...')
+  }
+
+  const handleSync = async () => {
+    if (!userId || isSyncing) return
+    setIsSyncing(true)
+    setSyncProgress({ status: 'connecting', message: 'Iniciando sincronização...' })
+
+    try {
+      const result = await sync.syncFromDrive(
+        userId,
+        (progress) => setSyncProgress(progress)
+      )
+      setLastSyncResult(result)
+      if (result.errors.length > 0) {
+        setAllErrors(prev => [...result.errors, ...prev])
+      }
+      if (result.imported > 0) {
+        toast.success(`${result.imported} arquivo(s) importado(s), ${result.analyzed} analisado(s)`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro na sincronização')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const handleLoadHistorical = async () => {
+    if (!userId) return
+    setLoadingHistorical(true)
+    setShowHistorical(true)
+    try {
+      const authToken = token || await drive.authorize()
+      setToken(authToken)
+      const currentConfig = sync.getDriveConfig()
+
+      const files = await sync.listConfiguredFiles(authToken, {
+        folderId: currentConfig.folderId!,
+        modifiedBefore: currentConfig.connectedAt || undefined
+      })
+      setHistoricalFiles(files)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao carregar arquivos')
+    } finally {
+      setLoadingHistorical(false)
+    }
+  }
+
+  const handleImportHistorical = async () => {
+    if (!userId || selectedHistorical.size === 0) return
+    setImportingHistorical(true)
+    try {
+      const authToken = token || await drive.authorize()
+      setToken(authToken)
+      const filesToImport = historicalFiles.filter(f => selectedHistorical.has(f.id))
+      const result = await sync.importSpecificFiles(
+        userId,
+        filesToImport,
+        authToken,
+        (progress) => setSyncProgress(progress)
+      )
+      setLastSyncResult(result)
+      if (result.errors.length > 0) {
+        setAllErrors(prev => [...result.errors, ...prev])
+      }
+      if (result.imported > 0) {
+        toast.success(`${result.imported} arquivo(s) histórico(s) importado(s)!`)
+      }
+      setSelectedHistorical(new Set())
+      // Reload historical list to update statuses
+      handleLoadHistorical()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao importar')
+    } finally {
+      setImportingHistorical(false)
+    }
+  }
+
+  const handleDisconnect = () => {
+    drive.clearToken()
+    sync.disconnectDrive()
+    setStep('inicio')
+    setToken(null)
+    setAllErrors([])
+    setLastSyncResult(null)
+    autoSyncRan.current = false
+    toast.success('Google Drive desconectado')
+  }
+
+  const handleUpdateSettings = () => {
+    sync.updateDriveConfig({
+      fileType: fileType || null,
+      namePattern: namePattern.trim() || null
+    })
+    setShowSettings(false)
+    toast.success('Configurações salvas!')
+  }
+
+  const toggleErrorDetail = (idx: number) => {
+    setExpandedErrors(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const toggleHistoricalFile = (fileId: string) => {
+    setSelectedHistorical(prev => {
+      const next = new Set(prev)
+      if (next.has(fileId)) next.delete(fileId)
+      else next.add(fileId)
+      return next
+    })
+  }
+
+  // ── Step indicators ──
+  const steps = [
+    { label: 'Conectar', key: 'inicio' },
+    { label: 'Pasta', key: 'pasta' },
+    { label: 'Configurar', key: 'config' },
+    { label: 'Pronto', key: 'conectado' }
+  ]
+  const stepKeys = ['inicio', 'conectando', 'pasta', 'config', 'conectado']
+  const currentIdx = stepKeys.indexOf(step)
+
+  const currentConfig = sync.getDriveConfig()
+
+  // ── Render ──
+
   return (
     <div className="space-y-6">
-      {/* Main Card */}
       <Card className="overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border px-6 py-5">
@@ -303,7 +412,7 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-foreground">Integração Google Drive</h3>
-              <p className="text-sm text-muted-foreground">Conecte sua conta para importar transcrições automaticamente</p>
+              <p className="text-sm text-muted-foreground">Importe transcrições automaticamente da sua pasta</p>
             </div>
           </div>
         </div>
@@ -311,111 +420,234 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
         <CardContent className="p-6">
           {/* Stepper */}
           <div className="flex items-center justify-center gap-0 mb-8">
-            {[
-              { label: 'Início', index: 0 },
-              { label: 'Permissões', index: 1 },
-              { label: 'Conectar', index: 2 }
-            ].map((s, i) => (
-              <div key={s.label} className="flex items-center">
-                {i > 0 && (
-                  <div className={`w-16 sm:w-24 h-px ${stepIndex > i - 1 ? 'bg-blue-600' : 'bg-border'}`} />
-                )}
-                <div className="flex items-center gap-2">
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
-                    stepIndex >= s.index
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {stepIndex > s.index ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      s.index + 1
-                    )}
+            {steps.map((s, i) => {
+              const stepNum = i === 0 ? 0 : i + 1 // skip 'conectando'
+              const isActive = currentIdx >= stepNum
+              const isDone = currentIdx > stepNum
+              return (
+                <div key={s.key} className="flex items-center">
+                  {i > 0 && (
+                    <div className={`w-12 sm:w-20 h-px ${isActive ? 'bg-blue-600' : 'bg-border'}`} />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+                      isActive ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {isDone ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+                    </div>
+                    <span className={`text-sm font-medium hidden sm:inline ${
+                      isActive ? 'text-foreground' : 'text-muted-foreground'
+                    }`}>{s.label}</span>
                   </div>
-                  <span className={`text-sm font-medium hidden sm:inline ${
-                    stepIndex >= s.index ? 'text-foreground' : 'text-muted-foreground'
-                  }`}>
-                    {s.label}
-                  </span>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
-          {/* Step Content */}
+          {/* ── Step: Início ── */}
           {step === 'inicio' && (
             <div className="text-center space-y-8">
               <div>
                 <h2 className="text-xl font-bold text-foreground mb-2">
-                  Comece a importar suas transcrições
+                  Importe suas transcrições automaticamente
                 </h2>
                 <p className="text-muted-foreground max-w-md mx-auto">
-                  Conecte seu Google Drive para importar os documentos de transcrição das suas calls.
+                  Selecione a pasta do Google Drive com suas transcrições. Novos arquivos serão importados automaticamente.
                 </p>
               </div>
 
-              {/* Feature cards */}
               <div className="space-y-3 max-w-lg mx-auto text-left">
                 <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
                   <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                    <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <FolderOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">Importação Automática</p>
-                    <p className="text-sm text-muted-foreground">Detectamos novos documentos e importamos automaticamente</p>
+                    <p className="font-semibold text-foreground">Selecione uma pasta</p>
+                    <p className="text-sm text-muted-foreground">Escolha a pasta onde ficam suas transcrições</p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
                   <div className="h-10 w-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                    <FolderOpen className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    <Zap className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">Acesso Somente Leitura</p>
-                    <p className="text-sm text-muted-foreground">Nunca modificamos ou deletamos seus arquivos</p>
+                    <p className="font-semibold text-foreground">Importação automática</p>
+                    <p className="text-sm text-muted-foreground">Novos arquivos são importados e analisados por IA</p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border">
                   <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
                     <Shield className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">100% Seguro</p>
-                    <p className="text-sm text-muted-foreground">Você pode revogar o acesso a qualquer momento</p>
+                    <p className="font-semibold text-foreground">Somente leitura</p>
+                    <p className="text-sm text-muted-foreground">Nunca modificamos seus arquivos</p>
                   </div>
                 </div>
               </div>
 
-              {/* CTA */}
               <Button
                 size="lg"
                 className="w-full max-w-lg h-12 bg-blue-600 hover:bg-blue-700 text-base font-semibold"
-                onClick={handleStartConnection}
+                onClick={handleConnect}
               >
-                Começar Conexão
+                Conectar Google Drive
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </div>
           )}
 
-          {step === 'permissoes' && (
+          {/* ── Step: Conectando ── */}
+          {step === 'conectando' && (
             <div className="text-center space-y-6 py-8">
               <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
               <div>
-                <h2 className="text-xl font-bold text-foreground mb-2">
-                  Conectando ao Google Drive...
-                </h2>
-                <p className="text-muted-foreground">
-                  Autorize o acesso na janela do Google que abriu.
-                </p>
+                <h2 className="text-xl font-bold text-foreground mb-2">Conectando ao Google Drive...</h2>
+                <p className="text-muted-foreground">Autorize o acesso na janela do Google que abriu.</p>
               </div>
             </div>
           )}
 
+          {/* ── Step: Pasta ── */}
+          {step === 'pasta' && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-xl font-bold text-foreground mb-2">Selecione a pasta de transcrições</h2>
+                <p className="text-muted-foreground">Escolha a pasta do Drive onde ficam suas transcrições de ligações</p>
+              </div>
+
+              {loadingFolders ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
+                  {/* Search */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar pasta por nome..."
+                        value={folderSearch}
+                        onChange={(e) => setFolderSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSearchFolders()}
+                        className="pl-9"
+                      />
+                    </div>
+                    <Button variant="outline" onClick={handleSearchFolders} disabled={isSearching}>
+                      {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    </Button>
+                  </div>
+
+                  {/* Suggested folders */}
+                  {suggestedFolders.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">Pastas sugeridas (detectadas automaticamente)</p>
+                      <div className="space-y-2">
+                        {suggestedFolders.map(folder => (
+                          <FolderItem
+                            key={folder.id}
+                            folder={folder}
+                            isSelected={selectedFolder?.id === folder.id}
+                            isSuggested
+                            onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Root folders / search results */}
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2">
+                      {searchResults.length > 0 ? 'Resultados da busca' : 'Pastas do Drive'}
+                    </p>
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {(searchResults.length > 0 ? searchResults : rootFolders)
+                        .filter(f => !suggestedFolders.some(s => s.id === f.id))
+                        .map(folder => (
+                          <FolderItem
+                            key={folder.id}
+                            folder={folder}
+                            isSelected={selectedFolder?.id === folder.id}
+                            onSelect={() => setSelectedFolder({ id: folder.id, name: folder.name })}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setStep('inicio')}>Voltar</Button>
+                <Button
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  disabled={!selectedFolder}
+                  onClick={handleConfirmFolder}
+                >
+                  Usar pasta: {selectedFolder?.name || '...'}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step: Config ── */}
+          {step === 'config' && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-xl font-bold text-foreground mb-2">Configurar importação</h2>
+                <p className="text-muted-foreground">
+                  Pasta: <span className="font-medium text-foreground">{selectedFolder?.name}</span>
+                </p>
+              </div>
+
+              <div className="max-w-lg mx-auto space-y-4">
+                <div className="space-y-2">
+                  <Label>Tipo de arquivo</Label>
+                  <Select value={fileType} onValueChange={setFileType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="application/vnd.google-apps.document">Google Docs (recomendado)</SelectItem>
+                      <SelectItem value="text/plain">Arquivos de texto (.txt)</SelectItem>
+                      <SelectItem value="">Todos os tipos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Selecione o formato das suas transcrições</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Padrão de nome (opcional)</Label>
+                  <Input
+                    placeholder="Ex: Transcript, Transcrição, Call..."
+                    value={namePattern}
+                    onChange={(e) => setNamePattern(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Filtrar apenas arquivos cujo nome contenha este texto. Deixe vazio para importar todos.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setStep('pasta')}>Voltar</Button>
+                <Button
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={handleSaveConfig}
+                >
+                  Conectar e iniciar importação
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step: Conectado (Dashboard) ── */}
           {step === 'conectado' && (
             <div className="space-y-6">
-              {/* Connected status */}
+              {/* Status bar */}
               <div className="flex items-center justify-between p-4 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/50">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
@@ -423,134 +655,285 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">Google Drive Conectado</p>
-                    <p className="text-sm text-muted-foreground">Pronto para importar seus arquivos</p>
+                    <p className="text-sm text-muted-foreground">
+                      Pasta: {currentConfig.folderName || '(nenhuma)'}
+                      {' · '}
+                      {MIME_LABELS[currentConfig.fileType || ''] || currentConfig.fileType || 'Todos os tipos'}
+                      {currentConfig.namePattern && ` · Padrão: "${currentConfig.namePattern}"`}
+                    </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleDisconnect} className="text-muted-foreground hover:text-foreground">
-                  Desconectar
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} title="Configurações">
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={handleDisconnect} className="text-muted-foreground hover:text-foreground">
+                    Desconectar
+                  </Button>
+                </div>
               </div>
 
-              {/* Import button */}
+              {/* Last sync info */}
+              {currentConfig.lastSync && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Última sincronização: {new Date(currentConfig.lastSync).toLocaleString('pt-BR')}
+                  {lastSyncResult && ` · ${lastSyncResult.imported} importados, ${lastSyncResult.analyzed} analisados`}
+                </p>
+              )}
+
+              {/* Sync button + progress */}
               <Button
                 size="lg"
                 className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-base font-semibold"
-                onClick={handleImportFiles}
-                disabled={isImporting}
+                onClick={handleSync}
+                disabled={isSyncing || importingHistorical}
               >
-                {isImporting ? (
+                {isSyncing ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Importando...
+                    {syncProgress?.message || 'Sincronizando...'}
                   </>
                 ) : (
                   <>
-                    <FolderOpen className="mr-2 h-5 w-5" />
-                    Selecionar Arquivos do Drive
+                    <RefreshCw className="mr-2 h-5 w-5" />
+                    Sincronizar novos arquivos
                   </>
                 )}
               </Button>
-              <p className="text-center text-sm text-muted-foreground">
-                Selecione transcrições (.txt, .md, Google Docs) ou planilhas (.csv) do seu Drive
-              </p>
+
+              {/* Sync progress bar */}
+              {isSyncing && syncProgress?.total && syncProgress.current && (
+                <div className="space-y-1">
+                  <Progress value={(syncProgress.current / syncProgress.total) * 100} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    {syncProgress.current}/{syncProgress.total} arquivos
+                  </p>
+                </div>
+              )}
+
+              {/* Historical import section */}
+              <div className="border rounded-lg">
+                <button
+                  className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors text-left"
+                  onClick={() => showHistorical ? setShowHistorical(false) : handleLoadHistorical()}
+                >
+                  <div className="flex items-center gap-2">
+                    {showHistorical ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <span className="font-medium">Arquivos anteriores à conexão</span>
+                  </div>
+                  <Badge variant="outline">{historicalFiles.length} arquivos</Badge>
+                </button>
+
+                {showHistorical && (
+                  <div className="border-t px-4 pb-4">
+                    {loadingHistorical ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : historicalFiles.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-6">
+                        Nenhum arquivo encontrado anterior à data de conexão
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between py-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (selectedHistorical.size === historicalFiles.length) {
+                                setSelectedHistorical(new Set())
+                              } else {
+                                setSelectedHistorical(new Set(historicalFiles.map(f => f.id)))
+                              }
+                            }}
+                          >
+                            {selectedHistorical.size === historicalFiles.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                          </Button>
+                          {selectedHistorical.size > 0 && (
+                            <Button
+                              size="sm"
+                              onClick={handleImportHistorical}
+                              disabled={importingHistorical}
+                            >
+                              {importingHistorical ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4 mr-1" />
+                              )}
+                              Importar {selectedHistorical.size} selecionado(s)
+                            </Button>
+                          )}
+                        </div>
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                          {historicalFiles.map(file => (
+                            <label
+                              key={file.id}
+                              className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedHistorical.has(file.id)}
+                                onChange={() => toggleHistoricalFile(file.id)}
+                                className="h-4 w-4 rounded border-border"
+                              />
+                              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm truncate">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString('pt-BR') : ''}
+                                </p>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Imported files history */}
-      {importedFiles.length > 0 && (
+      {/* Error Log */}
+      {allErrors.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Arquivos Importados
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Log de Erros ({allErrors.length})
             </CardTitle>
             <CardDescription>
-              {importedFiles.length} arquivo(s) importado(s) do Google Drive
+              Detalhes dos erros ocorridos durante a importação
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {importedFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(file.importedAt).toLocaleString('pt-BR')}
-                        {file.result && 'type' in file.result && file.result.type === 'csv' && ' · CSV detectado'}
-                        {file.result && !('type' in file.result) && ' · Transcrição analisada'}
-                      </p>
+              {allErrors.map((err, idx) => (
+                <div key={idx} className="rounded-lg border border-destructive/20 bg-destructive/5 overflow-hidden">
+                  <button
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-destructive/10 transition-colors"
+                    onClick={() => toggleErrorDetail(idx)}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {err.fileName || 'Erro geral'}
+                        </p>
+                        <p className="text-xs text-destructive">{err.error}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <FileStatusBadge status={file.status} />
-                    {file.status === 'completed' && file.result && !('type' in file.result && file.result.type === 'csv') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedAnalysis(file.result!)
-                          setShowAnalysisDialog(true)
-                        }}
-                        title="Ver análise"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs">
+                        {err.phase === 'download' ? 'Download' :
+                         err.phase === 'insert' ? 'Banco de dados' :
+                         err.phase === 'analysis' ? 'Análise IA' : 'Outro'}
+                      </Badge>
+                      {expandedErrors.has(idx)
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      }
+                    </div>
+                  </button>
+                  {expandedErrors.has(idx) && err.detail && (
+                    <div className="px-3 pb-3 border-t border-destructive/10">
+                      <pre className="text-xs text-muted-foreground bg-muted rounded p-2 mt-2 whitespace-pre-wrap break-all font-mono">
+                        {err.detail}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-3 text-muted-foreground"
+              onClick={() => setAllErrors([])}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Limpar log
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Analysis Dialog */}
-      <AnalysisResultDialog
-        open={showAnalysisDialog}
-        onOpenChange={setShowAnalysisDialog}
-        result={selectedAnalysis}
-      />
+      {/* Settings Dialog */}
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurações da importação</DialogTitle>
+            <DialogDescription>
+              Altere o tipo de arquivo e padrão de nome para a importação automática
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Tipo de arquivo</Label>
+              <Select value={fileType} onValueChange={setFileType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="application/vnd.google-apps.document">Google Docs</SelectItem>
+                  <SelectItem value="text/plain">Arquivos de texto (.txt)</SelectItem>
+                  <SelectItem value="">Todos os tipos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Padrão de nome (opcional)</Label>
+              <Input
+                placeholder="Ex: Transcript, Call..."
+                value={namePattern}
+                onChange={(e) => setNamePattern(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSettings(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateSettings}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function FileStatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case 'completed':
-      return (
-        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-          <CheckCircle2 className="h-3 w-3 mr-1" />
-          Importado
-        </Badge>
-      )
-    case 'processing':
-      return (
-        <Badge variant="secondary">
-          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-          Processando
-        </Badge>
-      )
-    case 'error':
-      return (
-        <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-          <AlertCircle className="h-3 w-3 mr-1" />
-          Erro
-        </Badge>
-      )
-    default:
-      return (
-        <Badge variant="outline">Pendente</Badge>
-      )
-  }
+// Folder selection item component
+function FolderItem({
+  folder,
+  isSelected,
+  isSuggested,
+  onSelect
+}: {
+  folder: DriveFolder
+  isSelected: boolean
+  isSuggested?: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+        isSelected
+          ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/20'
+          : 'border-border hover:bg-muted/50'
+      }`}
+      onClick={onSelect}
+    >
+      <Folder className={`h-5 w-5 flex-shrink-0 ${isSelected ? 'text-blue-600' : 'text-muted-foreground'}`} />
+      <span className={`font-medium ${isSelected ? 'text-blue-600' : 'text-foreground'}`}>
+        {folder.name}
+      </span>
+      {isSuggested && (
+        <Badge variant="secondary" className="ml-auto text-xs">Sugerida</Badge>
+      )}
+      {isSelected && (
+        <CheckCircle2 className="h-4 w-4 text-blue-600 ml-auto" />
+      )}
+    </button>
+  )
 }
 
 // ==========================================

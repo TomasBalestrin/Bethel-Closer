@@ -377,6 +377,135 @@ export async function listRecentFiles(
   }))
 }
 
+// ==========================================
+// Folder Browsing
+// ==========================================
+
+// List root-level folders
+export async function listRootFolders(token: string): Promise<DriveFolder[]> {
+  const params = new URLSearchParams({
+    q: "mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false",
+    fields: 'files(id,name)',
+    pageSize: '50',
+    orderBy: 'name',
+    key: GOOGLE_API_KEY
+  })
+
+  const response = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  if (!response.ok) return []
+
+  const data = await response.json()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.files || []).map((f: any) => ({ id: f.id, name: f.name }))
+}
+
+// Search folders by name
+export async function searchFoldersByName(token: string, name: string): Promise<DriveFolder[]> {
+  const safeName = name.replace(/'/g, "\\'")
+  const params = new URLSearchParams({
+    q: `mimeType = 'application/vnd.google-apps.folder' and name contains '${safeName}' and trashed = false`,
+    fields: 'files(id,name)',
+    pageSize: '20',
+    orderBy: 'name',
+    key: GOOGLE_API_KEY
+  })
+
+  const response = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  if (!response.ok) return []
+
+  const data = await response.json()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.files || []).map((f: any) => ({ id: f.id, name: f.name }))
+}
+
+// ==========================================
+// Flexible File Listing
+// ==========================================
+
+export interface ListFilesOptions {
+  folderId: string
+  mimeType?: string
+  nameContains?: string
+  modifiedAfter?: string
+  modifiedBefore?: string
+  pageSize?: number
+  pageToken?: string
+}
+
+export interface ListFilesResult {
+  files: DriveFile[]
+  nextPageToken?: string
+}
+
+export async function listFilesInFolder(token: string, options: ListFilesOptions): Promise<ListFilesResult> {
+  const conditions: string[] = [
+    `'${options.folderId}' in parents`,
+    'trashed = false'
+  ]
+
+  if (options.mimeType) {
+    conditions.push(`mimeType = '${options.mimeType}'`)
+  }
+  if (options.nameContains) {
+    const safeName = options.nameContains.replace(/'/g, "\\'")
+    conditions.push(`name contains '${safeName}'`)
+  }
+  if (options.modifiedAfter) {
+    conditions.push(`modifiedTime > '${options.modifiedAfter}'`)
+  }
+  if (options.modifiedBefore) {
+    conditions.push(`modifiedTime <= '${options.modifiedBefore}'`)
+  }
+
+  const params = new URLSearchParams({
+    q: conditions.join(' and '),
+    fields: 'files(id,name,mimeType,modifiedTime,size),nextPageToken',
+    pageSize: String(options.pageSize || 100),
+    orderBy: 'modifiedTime desc',
+    key: GOOGLE_API_KEY
+  })
+
+  if (options.pageToken) {
+    params.set('pageToken', options.pageToken)
+  }
+
+  const response = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken()
+      throw new Error('Token expirado. Reconecte sua conta Google.')
+    }
+    const error = await response.json().catch(() => ({ error: { message: response.statusText } }))
+    throw new Error(error.error?.message || `Falha ao listar arquivos: ${response.status}`)
+  }
+
+  const data = await response.json()
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    files: (data.files || []).map((f: any) => ({
+      id: f.id,
+      name: f.name,
+      mimeType: f.mimeType,
+      size: f.size,
+      modifiedTime: f.modifiedTime
+    })),
+    nextPageToken: data.nextPageToken
+  }
+}
+
+// ==========================================
+// File Download
+// ==========================================
+
 export async function downloadFileContent(fileId: string, mimeType: string, token: string): Promise<string> {
   // Google Docs need to be exported as plain text
   if (mimeType === 'application/vnd.google-apps.document') {
