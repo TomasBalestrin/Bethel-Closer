@@ -694,19 +694,32 @@ Antes de finalizar, valide:
 - JSON está válido e completo?
 Se faltar qualquer item, corrija antes de responder.`
 
+// Timeout for OpenAI API calls (3 minutes - analysis can take 1-2 min for long transcripts)
+const OPENAI_TIMEOUT_MS = 180000
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function analyzeCallTranscript(transcript: string): Promise<Record<string, any>> {
   if (!OPENAI_API_KEY) {
     throw new Error('Chave da API OpenAI não configurada. Adicione VITE_OPENAI_API_KEY no ambiente Vercel.')
   }
 
+  console.log('[OpenAI] Starting analysis, transcript length:', transcript.length)
+
   const messages: ChatMessage[] = [
     { role: 'system', content: MASTER_PROMPT },
     { role: 'user', content: `TRANSCRICAO:\n\n${transcript}` }
   ]
 
+  // Create AbortController for timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    console.log('[OpenAI] Request timed out after', OPENAI_TIMEOUT_MS / 1000, 'seconds')
+    controller.abort()
+  }, OPENAI_TIMEOUT_MS)
+
   let response: Response
   try {
+    console.log('[OpenAI] Sending request to API...')
     response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -718,11 +731,20 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
         messages,
         temperature: 0.2,
         max_tokens: 16384
-      })
+      }),
+      signal: controller.signal
     })
+    clearTimeout(timeoutId)
+    console.log('[OpenAI] Response received, status:', response.status)
   } catch (networkError) {
-    // Network error (CORS, timeout, no internet, etc.)
-    console.error('OpenAI fetch failed:', networkError)
+    clearTimeout(timeoutId)
+    // Check if it was an abort (timeout)
+    if (networkError instanceof Error && networkError.name === 'AbortError') {
+      console.error('[OpenAI] Request aborted due to timeout')
+      throw new Error('Análise demorou mais de 3 minutos e foi cancelada. Tente novamente ou verifique se a transcrição é muito longa.')
+    }
+    // Network error (CORS, no internet, etc.)
+    console.error('[OpenAI] Fetch failed:', networkError)
     throw new Error(`Erro de conexão com OpenAI: ${networkError instanceof Error ? networkError.message : 'Verifique sua conexão e a chave API'}`)
   }
 
@@ -730,6 +752,7 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
     let errorMessage = `Erro ${response.status} da OpenAI`
     try {
       const error = await response.json()
+      console.error('[OpenAI] API error response:', error)
       errorMessage = error.error?.message || errorMessage
       if (response.status === 401) {
         errorMessage = 'Chave API inválida ou expirada. Verifique VITE_OPENAI_API_KEY.'
@@ -740,6 +763,7 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
       }
     } catch {
       // JSON parse failed
+      console.error('[OpenAI] Could not parse error response')
     }
     throw new Error(errorMessage)
   }
@@ -748,8 +772,11 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
   const content = data.choices[0]?.message?.content
 
   if (!content) {
+    console.error('[OpenAI] No content in response:', data)
     throw new Error('Nenhuma resposta da OpenAI')
   }
+
+  console.log('[OpenAI] Received response, content length:', content.length)
 
   // Clean possible markdown wrapping
   let jsonStr = content.trim()
@@ -758,8 +785,12 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
   }
 
   try {
-    return JSON.parse(jsonStr)
-  } catch {
+    const parsed = JSON.parse(jsonStr)
+    console.log('[OpenAI] Successfully parsed analysis, nota_geral:', parsed.nota_geral)
+    return parsed
+  } catch (parseError) {
+    console.error('[OpenAI] JSON parse failed:', parseError)
+    console.error('[OpenAI] Raw content (first 500 chars):', jsonStr.substring(0, 500))
     throw new Error('Falha ao interpretar resposta da IA como JSON')
   }
 }
