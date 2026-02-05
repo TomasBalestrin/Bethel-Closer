@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search,
@@ -29,7 +30,10 @@ import {
   Zap,
   Trash2,
   AlertCircle,
-  MoreVertical
+  MoreVertical,
+  ExternalLink,
+  UserPlus,
+  Loader2 as Loader
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -936,7 +940,10 @@ interface CallDetailDialogProps {
 }
 
 function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, onDelete, isAnalyzing }: CallDetailDialogProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState<string>('resumo')
+  const [creatingClient, setCreatingClient] = useState(false)
 
   if (!call) return null
 
@@ -996,13 +1003,80 @@ function CallDetailDialog({ call, open, onClose, onStatusChange, onAnalyze, onDe
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Client Button */}
+                {call.client_id ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      onClose()
+                      navigate(`/clients/${call.client_id}`)
+                    }}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1.5" />
+                    Ver Cliente
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    disabled={creatingClient}
+                    onClick={async () => {
+                      setCreatingClient(true)
+                      try {
+                        const { data: newClient, error } = await supabase
+                          .from('clients')
+                          .insert({
+                            name: clientName,
+                            email: '',
+                            phone: '',
+                            company: analysis?.dados_extraidos?.nicho_profissao || null,
+                            closer_id: call.closer_id,
+                            status: 'lead',
+                            source: 'organic',
+                            notes: analysis?.dados_extraidos?.dor_principal_declarada?.texto || null
+                          })
+                          .select()
+                          .single()
+
+                        if (error) throw error
+
+                        // Update call with client_id
+                        await supabase
+                          .from('calls')
+                          .update({ client_id: newClient.id })
+                          .eq('id', call.id)
+
+                        queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
+                        toast.success('Cliente criado com sucesso!')
+                        onClose()
+                        navigate(`/clients/${newClient.id}`)
+                      } catch (err) {
+                        console.error('Error creating client:', err)
+                        toast.error('Erro ao criar cliente')
+                      } finally {
+                        setCreatingClient(false)
+                      }
+                    }}
+                  >
+                    {creatingClient ? (
+                      <Loader className="h-3 w-3 mr-1.5 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-3 w-3 mr-1.5" />
+                    )}
+                    Criar Cliente
+                  </Button>
+                )}
+
                 {/* Status Selector */}
                 <Select
                   value={resultStatus}
                   onValueChange={(v) => onStatusChange(call.id, v as CallResultStatus)}
                 >
-                  <SelectTrigger className="w-[130px] h-8 text-xs">
+                  <SelectTrigger className="w-[120px] h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
