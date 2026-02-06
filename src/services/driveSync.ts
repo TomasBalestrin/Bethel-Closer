@@ -720,7 +720,7 @@ export async function syncExistingCallsToCrm(
     // Get all calls with ai_analysis
     let query = supabase
       .from('calls')
-      .select('id, ai_analysis, scheduled_at, closer_id')
+      .select('id, ai_analysis, ai_summary, scheduled_at, closer_id, recording_url')
       .not('ai_analysis', 'is', null)
 
     // Filter by closer if provided
@@ -731,22 +731,41 @@ export async function syncExistingCallsToCrm(
     const { data: calls, error: callsError } = await query
 
     if (callsError) {
+      console.error('[SyncExisting] Error fetching calls:', callsError)
       result.errors.push(`Erro ao buscar calls: ${callsError.message}`)
       return result
     }
+
+    console.log('[SyncExisting] Found calls with analysis:', calls?.length || 0)
 
     if (!calls || calls.length === 0) {
       return result
     }
 
-    // Get existing CRM clients to check for duplicates
+    // Get existing CRM clients to check for duplicates (by call ID from recording_url)
     const { data: existingClients } = await supabase
       .from('crm_call_clients')
-      .select('name, closer_id, call_date')
+      .select('id, name, closer_id, call_date, notes')
 
-    const existingSet = new Set(
-      (existingClients || []).map(c => `${c.name?.toLowerCase()}-${c.closer_id}-${c.call_date?.split('T')[0]}`)
-    )
+    // Create a set of existing client keys for duplicate checking
+    // Use multiple keys to catch duplicates: name+closer+date OR notes containing call info
+    const existingByName = new Set<string>()
+    const existingByCallId = new Set<string>()
+
+    for (const client of existingClients || []) {
+      if (client.name && client.closer_id) {
+        const dateKey = client.call_date?.split('T')[0] || ''
+        existingByName.add(`${client.name.toLowerCase()}-${client.closer_id}-${dateKey}`)
+      }
+    }
+
+    // Also track by recording_url to prevent duplicates from same call
+    for (const call of calls) {
+      if (call.recording_url) {
+        const fileId = call.recording_url.replace('drive://', '')
+        existingByCallId.add(fileId)
+      }
+    }
 
     const total = calls.length
     let current = 0
@@ -755,26 +774,53 @@ export async function syncExistingCallsToCrm(
       current++
       const analysis = call.ai_analysis as any
 
-      if (!analysis?.identificacao) {
-        result.skipped++
-        continue
+      // Extract client name - try multiple sources
+      let clientName: string | null = null
+
+      // 1. Try from identificacao.nome_lead
+      if (analysis?.identificacao?.nome_lead &&
+          analysis.identificacao.nome_lead !== 'nao_informado' &&
+          analysis.identificacao.nome_lead !== 'Não informado') {
+        clientName = analysis.identificacao.nome_lead
       }
 
-      // Extract client name from analysis
-      const clientName = analysis.identificacao?.nome_lead && analysis.identificacao.nome_lead !== 'nao_informado'
-        ? analysis.identificacao.nome_lead
-        : analysis.drive_file_name?.replace(/ - Transcript$/i, '').replace(/\s*\([^)]+\)\s*$/, '').trim()
+      // 2. Try from drive_file_name in analysis
+      if (!clientName && analysis?.drive_file_name) {
+        clientName = analysis.drive_file_name
+          .replace(/ - Transcript$/i, '')
+          .replace(/\s*\([^)]+\)\s*$/, '')
+          .replace(/\.txt$/i, '')
+          .trim()
+      }
 
+      // 3. Try from recording_url (drive file id -> use ai_summary for name hint)
+      if (!clientName && call.ai_summary) {
+        // ai_summary format: "Produto | Nicho | Nota: X/10"
+        // Use first part or generate from summary
+        const summaryParts = call.ai_summary.split('|').map((s: string) => s.trim())
+        if (summaryParts.length > 1) {
+          clientName = `Lead - ${summaryParts[0]}`
+        }
+      }
+
+      // 4. Last resort - generate from call ID
       if (!clientName) {
+        clientName = `Lead ${call.id.substring(0, 8)}`
+      }
+
+      // Skip if no valid name
+      if (!clientName || clientName.trim() === '') {
+        console.log('[SyncExisting] Skipping call without name:', call.id)
         result.skipped++
         continue
       }
 
-      // Check if client already exists
+      // Check if client already exists by name+closer+date
       const callDate = call.scheduled_at?.split('T')[0] || new Date().toISOString().split('T')[0]
       const clientKey = `${clientName.toLowerCase()}-${call.closer_id}-${callDate}`
 
-      if (existingSet.has(clientKey)) {
+      if (existingByName.has(clientKey)) {
+        console.log('[SyncExisting] Client already exists:', clientName)
         result.skipped++
         continue
       }
@@ -785,19 +831,21 @@ export async function syncExistingCallsToCrm(
         message: `Criando cliente: ${clientName}`
       })
 
+      console.log('[SyncExisting] Creating CRM client:', clientName)
+
       try {
         const { error: crmError } = await supabase
           .from('crm_call_clients')
           .insert({
             name: clientName,
-            niche: analysis.dados_extraidos?.nicho_profissao !== 'nao_informado'
-              ? analysis.dados_extraidos?.nicho_profissao
+            niche: analysis?.dados_extraidos?.nicho_profissao !== 'nao_informado'
+              ? analysis?.dados_extraidos?.nicho_profissao
               : null,
-            product_offered: analysis.identificacao?.produto_ofertado !== 'nao_informado'
-              ? analysis.identificacao?.produto_ofertado
+            product_offered: analysis?.identificacao?.produto_ofertado !== 'nao_informado'
+              ? analysis?.identificacao?.produto_ofertado
               : null,
-            notes: analysis.dados_extraidos?.dor_principal_declarada?.texto !== 'nao_informado'
-              ? analysis.dados_extraidos?.dor_principal_declarada?.texto
+            notes: analysis?.dados_extraidos?.dor_principal_declarada?.texto !== 'nao_informado'
+              ? analysis?.dados_extraidos?.dor_principal_declarada?.texto
               : null,
             stage: 'call_realizada',
             call_date: call.scheduled_at || new Date().toISOString(),
@@ -806,18 +854,22 @@ export async function syncExistingCallsToCrm(
           })
 
         if (crmError) {
+          console.error('[SyncExisting] Error creating client:', crmError)
           result.errors.push(`Erro ao criar ${clientName}: ${crmError.message}`)
         } else {
+          console.log('[SyncExisting] Created CRM client:', clientName)
           result.synced++
-          existingSet.add(clientKey) // Prevent duplicates in same run
+          existingByName.add(clientKey) // Prevent duplicates in same run
         }
       } catch (err) {
+        console.error('[SyncExisting] Exception creating client:', err)
         result.errors.push(`Erro ao criar ${clientName}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
-    console.log(`[DriveSync] Synced ${result.synced} existing calls to CRM, skipped ${result.skipped}`)
+    console.log(`[SyncExisting] Finished: synced=${result.synced}, skipped=${result.skipped}, errors=${result.errors.length}`)
   } catch (err) {
+    console.error('[SyncExisting] General error:', err)
     result.errors.push(`Erro geral: ${err instanceof Error ? err.message : String(err)}`)
   }
 

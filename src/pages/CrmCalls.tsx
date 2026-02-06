@@ -198,10 +198,18 @@ export default function CrmCallsPage() {
 
       try {
         const result = await syncExistingCallsToCrm(user.id)
+        console.log(`[CrmCalls] Sync result:`, result)
         if (result.synced > 0) {
           console.log(`[CrmCalls] Synced ${result.synced} existing calls to CRM`)
+          // Invalidate all related queries to refresh data across the app
           queryClient.invalidateQueries({ queryKey: ['crm-call-clients'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['calls'] })
+          queryClient.invalidateQueries({ queryKey: ['clients'] })
           toast.success(`${result.synced} cliente(s) criado(s) automaticamente das calls analisadas`)
+        }
+        if (result.errors.length > 0) {
+          console.error('[CrmCalls] Sync errors:', result.errors)
         }
       } catch (err) {
         console.error('[CrmCalls] Auto-sync failed:', err)
