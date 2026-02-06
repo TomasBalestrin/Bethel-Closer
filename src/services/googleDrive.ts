@@ -229,7 +229,6 @@ export async function authorizeSilent(): Promise<string | null> {
         storeToken(response.access_token, response.expires_in)
         resolve(response.access_token)
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       error_callback: () => {
         resolve(null)
       }

@@ -304,7 +304,7 @@ export default function ClientDetailPage() {
 
       const suggestions = await suggestNextActions(clientHistory, lastCallSummary)
       setAiSuggestions(suggestions)
-    } catch (error) {
+    } catch {
       toast.error('Erro ao gerar sugestões de IA')
     } finally {
       setIsLoadingSuggestions(false)

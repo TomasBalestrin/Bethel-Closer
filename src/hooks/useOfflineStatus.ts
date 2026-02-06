@@ -89,15 +89,20 @@ export function useOfflineStatus() {
       }
     });
 
-    // Initial pending count
-    updatePendingCount();
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       unsubscribe();
     };
   }, [handleOnline, handleOffline, updatePendingCount]);
+
+  // Initial pending count - run once on mount (separate effect to avoid cascading renders warning)
+  useEffect(() => {
+    // Use a microtask to avoid synchronous setState during effect
+    queueMicrotask(() => {
+      updatePendingCount();
+    });
+  }, [updatePendingCount]);
 
   // Manual sync trigger
   const triggerSync = useCallback(async () => {

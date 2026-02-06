@@ -191,7 +191,8 @@ function ClosersTab({ currentUserId }: { currentUserId?: string }) {
       }
     }
     ensureAdminProfile()
-  }, [user?.id, profile, queryClient])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, queryClient]) // profile is intentionally omitted to prevent re-runs
 
   // Fetch all users
   const { data: users = [], isLoading } = useQuery({
@@ -836,7 +837,7 @@ function PasswordDialog({
       toast.success('Senha atualizada com sucesso!')
       onOpenChange(false)
       setNewPassword('')
-    } catch (error) {
+    } catch {
       toast.error('Erro ao atualizar senha. Pode ser necessário configurar uma Edge Function para reset de senha de outros usuários.')
     } finally {
       setIsUpdating(false)
@@ -945,7 +946,7 @@ function TeamGoalDialog({
       queryClient.invalidateQueries({ queryKey: ['monthly-goal'] })
       toast.success(`Metas definidas para ${members.length} membro(s)!`)
       onOpenChange(false)
-    } catch (error) {
+    } catch {
       toast.error('Erro ao salvar metas')
     } finally {
       setIsSaving(false)

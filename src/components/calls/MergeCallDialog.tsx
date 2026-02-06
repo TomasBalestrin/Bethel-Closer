@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/services/supabase'
 import { analyzeCallTranscript } from '@/services/openai'
 import { deriveResultStatus } from '@/services/driveSync'
@@ -52,13 +52,7 @@ export function MergeCallDialog({
   const [loading, setLoading] = useState(true)
   const [merging, setMerging] = useState(false)
 
-  useEffect(() => {
-    if (open) {
-      fetchAvailableCalls()
-    }
-  }, [open, currentCall.id])
-
-  const fetchAvailableCalls = async () => {
+  const fetchAvailableCalls = useCallback(async () => {
     try {
       setLoading(true)
       // Get calls from the same closer
@@ -72,13 +66,19 @@ export function MergeCallDialog({
 
       if (error) throw error
       setAvailableCalls((data || []) as (Call & { client?: Client })[])
-    } catch (error) {
-      console.error('Error fetching calls:', error)
+    } catch (err) {
+      console.error('Error fetching calls:', err)
       toast.error('Erro ao carregar calls')
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentCall.closer_id, currentCall.id])
+
+  useEffect(() => {
+    if (open) {
+      fetchAvailableCalls()
+    }
+  }, [open, fetchAvailableCalls])
 
   const handleMerge = async () => {
     if (!selectedCallId) {

@@ -248,9 +248,17 @@ class SyncQueueService {
    * Request background sync (if supported)
    */
   async requestBackgroundSync(): Promise<boolean> {
-    if ('serviceWorker' in navigator && 'sync' in (window as any).ServiceWorkerRegistration?.prototype) {
+    // Check if Background Sync API is available
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const swRegistrationPrototype = typeof ServiceWorkerRegistration !== 'undefined'
+      ? ServiceWorkerRegistration.prototype
+      : null;
+    const hasSync = swRegistrationPrototype && 'sync' in swRegistrationPrototype;
+
+    if (hasServiceWorker && hasSync) {
       try {
         const registration = await navigator.serviceWorker.ready;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (registration as any).sync.register('sync-mutations');
         console.log('[SyncQueue] Background sync registered');
         return true;

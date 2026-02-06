@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -16,7 +16,8 @@ import {
   Phone,
   Flame,
   Search,
-  Loader2
+  Loader2,
+  LucideIcon
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,15 @@ import { useAuthStore } from '@/stores/authStore'
 import { supabase } from '@/services/supabase'
 import { toast } from 'sonner'
 import logo from '@/components/ui/logo.png'
+
+// Sidebar content props interface
+interface SidebarContentProps {
+  navigation: { name: string; href: string; icon: LucideIcon }[]
+  collapsed: boolean
+  setCollapsed: (value: boolean) => void
+  setMobileOpen: (value: boolean) => void
+  handleSignOut: () => void
+}
 
 // Navigation items
 const baseNavigation = [
@@ -47,6 +57,103 @@ const adminNavigation = [
   { name: 'Admin', href: '/admin', icon: Shield }
 ]
 
+// Sidebar Content Component (extracted to avoid re-creation on each render)
+function SidebarContent({ navigation, collapsed, setCollapsed, setMobileOpen, handleSignOut }: SidebarContentProps) {
+  return (
+    <>
+      {/* Logo */}
+      <div className={cn(
+        'flex items-center h-16 px-4 border-b border-sidebar-border',
+        collapsed ? 'justify-center' : 'justify-between'
+      )}>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="Bethel Closer" className="h-8 w-auto" />
+          {!collapsed && (
+            <span className="text-lg font-semibold text-sidebar-foreground">Bethel Closer</span>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex',
+            collapsed && 'lg:hidden'
+          )}
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        {/* Mobile close button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {/* Expand button when collapsed */}
+      {collapsed && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-sidebar-border text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex"
+          onClick={() => setCollapsed(false)}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      )}
+
+      {/* Navigation */}
+      <ScrollArea className="flex-1 py-4">
+        <nav className="space-y-1 px-3">
+          {navigation.map((item) => (
+            <NavLink
+              key={item.name}
+              to={item.href}
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                  isActive
+                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                  collapsed && 'justify-center px-2 lg:justify-center'
+                )
+              }
+              title={collapsed ? item.name : undefined}
+            >
+              <item.icon className="h-5 w-5 flex-shrink-0" />
+              {(!collapsed || !window.matchMedia('(min-width: 1024px)').matches) && (
+                <span>{item.name}</span>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+      </ScrollArea>
+
+      {/* Footer */}
+      <div className="border-t border-sidebar-border p-3">
+        <button
+          onClick={handleSignOut}
+          className={cn(
+            'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200',
+            collapsed && 'justify-center px-2 lg:justify-center'
+          )}
+          title={collapsed ? 'Sair' : undefined}
+        >
+          <LogOut className="h-5 w-5 flex-shrink-0" />
+          {(!collapsed || !window.matchMedia('(min-width: 1024px)').matches) && (
+            <span>Sair</span>
+          )}
+        </button>
+      </div>
+    </>
+  )
+}
+
 // Global Search Component
 function GlobalSearch() {
   const [open, setOpen] = useState(false)
@@ -56,6 +163,13 @@ function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
+  // Reset query and results when dialog closes
+  const handleClose = useCallback(() => {
+    setOpen(false)
+    setQuery('')
+    setResults({ clients: [], calls: [] })
+  }, [])
+
   // Keyboard shortcut: Ctrl+K / Cmd+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -63,15 +177,16 @@ function GlobalSearch() {
         e.preventDefault()
         setOpen(o => !o)
       }
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') handleClose()
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [])
+  }, [handleClose])
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100)
-    if (!open) { setQuery(''); setResults({ clients: [], calls: [] }) }
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
   }, [open])
 
   const doSearch = useCallback(async (q: string) => {
@@ -204,112 +319,18 @@ export function AppLayout() {
       await signOut()
       toast.success('Logout realizado com sucesso!')
       navigate('/auth')
-    } catch (error) {
+    } catch {
       toast.error('Erro ao fazer logout')
     }
   }
 
   // Build navigation based on user role (check both profile and user for resilience)
   const role = profile?.role || user?.role
-  const navigation = [
+  const navigation = useMemo(() => [
     ...baseNavigation,
     ...(role === 'lider' || role === 'admin' ? leaderNavigation : []),
     ...(role === 'admin' ? adminNavigation : [])
-  ]
-
-  const SidebarContent = () => (
-    <>
-      {/* Logo */}
-      <div className={cn(
-        'flex items-center h-16 px-4 border-b border-sidebar-border',
-        collapsed ? 'justify-center' : 'justify-between'
-      )}>
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="Bethel Closer" className="h-8 w-auto" />
-          {!collapsed && (
-            <span className="text-lg font-semibold text-sidebar-foreground">Bethel Closer</span>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex',
-            collapsed && 'lg:hidden'
-          )}
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        {/* Mobile close button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        >
-          <X className="h-5 w-5" />
-        </Button>
-      </div>
-
-      {/* Expand button when collapsed */}
-      {collapsed && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-sidebar-border text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent hidden lg:flex"
-          onClick={() => setCollapsed(false)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      )}
-
-      {/* Navigation */}
-      <ScrollArea className="flex-1 py-4">
-        <nav className="space-y-1 px-3">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                  isActive
-                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                  collapsed && 'justify-center px-2 lg:justify-center'
-                )
-              }
-              title={collapsed ? item.name : undefined}
-            >
-              <item.icon className="h-5 w-5 flex-shrink-0" />
-              {(!collapsed || !window.matchMedia('(min-width: 1024px)').matches) && (
-                <span>{item.name}</span>
-              )}
-            </NavLink>
-          ))}
-        </nav>
-      </ScrollArea>
-
-      {/* Footer */}
-      <div className="border-t border-sidebar-border p-3">
-        <button
-          onClick={handleSignOut}
-          className={cn(
-            'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200',
-            collapsed && 'justify-center px-2 lg:justify-center'
-          )}
-          title={collapsed ? 'Sair' : undefined}
-        >
-          <LogOut className="h-5 w-5 flex-shrink-0" />
-          {(!collapsed || !window.matchMedia('(min-width: 1024px)').matches) && (
-            <span>Sair</span>
-          )}
-        </button>
-      </div>
-    </>
-  )
+  ], [role])
 
   return (
     <div className="min-h-screen bg-background">
@@ -328,7 +349,13 @@ export function AppLayout() {
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <SidebarContent />
+        <SidebarContent
+          navigation={navigation}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          setMobileOpen={setMobileOpen}
+          handleSignOut={handleSignOut}
+        />
       </aside>
 
       {/* Desktop Sidebar */}
@@ -338,7 +365,13 @@ export function AppLayout() {
           collapsed ? 'w-[72px]' : 'w-[264px]'
         )}
       >
-        <SidebarContent />
+        <SidebarContent
+          navigation={navigation}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          setMobileOpen={setMobileOpen}
+          handleSignOut={handleSignOut}
+        />
       </aside>
 
       {/* Main content */}
