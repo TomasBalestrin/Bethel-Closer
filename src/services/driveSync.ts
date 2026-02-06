@@ -697,3 +697,129 @@ export async function importSpecificFiles(
 
   return result
 }
+
+// ── Sync existing analyzed calls to CRM clients ──
+
+export interface SyncExistingResult {
+  synced: number
+  skipped: number
+  errors: string[]
+}
+
+/**
+ * Sync existing analyzed calls to CRM clients.
+ * Creates CRM clients for calls that have ai_analysis but no corresponding CRM client.
+ */
+export async function syncExistingCallsToCrm(
+  closerId?: string,
+  onProgress?: (progress: { current: number; total: number; message: string }) => void
+): Promise<SyncExistingResult> {
+  const result: SyncExistingResult = { synced: 0, skipped: 0, errors: [] }
+
+  try {
+    // Get all calls with ai_analysis
+    let query = supabase
+      .from('calls')
+      .select('id, ai_analysis, scheduled_at, closer_id')
+      .not('ai_analysis', 'is', null)
+
+    // Filter by closer if provided
+    if (closerId) {
+      query = query.eq('closer_id', closerId)
+    }
+
+    const { data: calls, error: callsError } = await query
+
+    if (callsError) {
+      result.errors.push(`Erro ao buscar calls: ${callsError.message}`)
+      return result
+    }
+
+    if (!calls || calls.length === 0) {
+      return result
+    }
+
+    // Get existing CRM clients to check for duplicates
+    const { data: existingClients } = await supabase
+      .from('crm_call_clients')
+      .select('name, closer_id, call_date')
+
+    const existingSet = new Set(
+      (existingClients || []).map(c => `${c.name?.toLowerCase()}-${c.closer_id}-${c.call_date?.split('T')[0]}`)
+    )
+
+    const total = calls.length
+    let current = 0
+
+    for (const call of calls) {
+      current++
+      const analysis = call.ai_analysis as any
+
+      if (!analysis?.identificacao) {
+        result.skipped++
+        continue
+      }
+
+      // Extract client name from analysis
+      const clientName = analysis.identificacao?.nome_lead && analysis.identificacao.nome_lead !== 'nao_informado'
+        ? analysis.identificacao.nome_lead
+        : analysis.drive_file_name?.replace(/ - Transcript$/i, '').replace(/\s*\([^)]+\)\s*$/, '').trim()
+
+      if (!clientName) {
+        result.skipped++
+        continue
+      }
+
+      // Check if client already exists
+      const callDate = call.scheduled_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+      const clientKey = `${clientName.toLowerCase()}-${call.closer_id}-${callDate}`
+
+      if (existingSet.has(clientKey)) {
+        result.skipped++
+        continue
+      }
+
+      onProgress?.({
+        current,
+        total,
+        message: `Criando cliente: ${clientName}`
+      })
+
+      try {
+        const { error: crmError } = await supabase
+          .from('crm_call_clients')
+          .insert({
+            name: clientName,
+            niche: analysis.dados_extraidos?.nicho_profissao !== 'nao_informado'
+              ? analysis.dados_extraidos?.nicho_profissao
+              : null,
+            product_offered: analysis.identificacao?.produto_ofertado !== 'nao_informado'
+              ? analysis.identificacao?.produto_ofertado
+              : null,
+            notes: analysis.dados_extraidos?.dor_principal_declarada?.texto !== 'nao_informado'
+              ? analysis.dados_extraidos?.dor_principal_declarada?.texto
+              : null,
+            stage: 'call_realizada',
+            call_date: call.scheduled_at || new Date().toISOString(),
+            closer_id: call.closer_id,
+            has_partner: false
+          })
+
+        if (crmError) {
+          result.errors.push(`Erro ao criar ${clientName}: ${crmError.message}`)
+        } else {
+          result.synced++
+          existingSet.add(clientKey) // Prevent duplicates in same run
+        }
+      } catch (err) {
+        result.errors.push(`Erro ao criar ${clientName}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    console.log(`[DriveSync] Synced ${result.synced} existing calls to CRM, skipped ${result.skipped}`)
+  } catch (err) {
+    result.errors.push(`Erro geral: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  return result
+}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -56,6 +56,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/services/supabase'
+import { syncExistingCallsToCrm } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { CrmCallClient, CrmCallStage } from '@/types'
@@ -189,6 +190,26 @@ export default function CrmCallsPage() {
     }
     setIsDialogOpen(true)
   }
+
+  // Auto-sync existing analyzed calls to CRM clients on page load
+  useEffect(() => {
+    const syncCalls = async () => {
+      if (!user?.id) return
+
+      try {
+        const result = await syncExistingCallsToCrm(user.id)
+        if (result.synced > 0) {
+          console.log(`[CrmCalls] Synced ${result.synced} existing calls to CRM`)
+          queryClient.invalidateQueries({ queryKey: ['crm-call-clients'] })
+          toast.success(`${result.synced} cliente(s) criado(s) automaticamente das calls analisadas`)
+        }
+      } catch (err) {
+        console.error('[CrmCalls] Auto-sync failed:', err)
+      }
+    }
+
+    syncCalls()
+  }, [user?.id, queryClient])
 
   // Fetch CRM Call clients
   const { data: clients, isLoading } = useQuery({
