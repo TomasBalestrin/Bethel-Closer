@@ -15,7 +15,8 @@ import {
   Trash2,
   DollarSign,
   MapPin,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -132,6 +133,7 @@ export default function CrmCallsPage() {
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [draggedClientId, setDraggedClientId] = useState<string | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const dragOverColumnRef = useRef<CrmCallStage | null>(null)
@@ -220,6 +222,34 @@ export default function CrmCallsPage() {
 
     syncCalls()
   }, [user?.profileId, queryClient])
+
+  // Manual sync function with feedback
+  const handleManualSync = async () => {
+    if (!user?.profileId || isSyncing) return
+
+    setIsSyncing(true)
+    try {
+      const result = await syncExistingCallsToCrm(user.profileId)
+      console.log('[CrmCalls] Manual sync result:', result)
+
+      if (result.synced > 0) {
+        queryClient.invalidateQueries({ queryKey: ['crm-call-clients'] })
+        queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+        toast.success(`${result.synced} cliente(s) criado(s) das calls analisadas!`)
+      } else if (result.skipped > 0 && result.errors.length === 0) {
+        toast.info(`Todas as ${result.skipped} calls já têm clientes no CRM`)
+      } else if (result.errors.length > 0) {
+        toast.error(`Erros na sincronização: ${result.errors.join(', ')}`)
+      } else {
+        toast.info('Nenhuma call analisada encontrada para sincronizar')
+      }
+    } catch (err) {
+      console.error('[CrmCalls] Manual sync failed:', err)
+      toast.error('Erro ao sincronizar calls')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   // Fetch CRM Call clients
   const { data: clients, isLoading } = useQuery({
@@ -391,6 +421,15 @@ export default function CrmCallsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            title="Sincronizar calls analisadas para o CRM"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Sincronizando...' : 'Sincronizar Calls'}
+          </Button>
           <Button onClick={() => openDialog()}>
             <Plus className="h-4 w-4 mr-2" />
             Novo Cliente
