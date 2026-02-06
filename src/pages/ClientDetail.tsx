@@ -256,7 +256,7 @@ export default function ClientDetailPage() {
     mutationFn: async (data: z.infer<typeof callSchema>) => {
       const { error } = await supabase.from('calls').insert({
         client_id: id,
-        closer_id: user?.id,
+        closer_id: user?.profileId,
         scheduled_at: data.scheduled_at,
         classification: data.classification,
         notes: data.notes,

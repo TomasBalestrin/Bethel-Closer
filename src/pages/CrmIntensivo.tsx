@@ -281,7 +281,7 @@ export default function CrmIntensivoPage() {
         notes: data.notes || null,
         event_id: currentEventId,
         stage: 'abordagem_inicial',
-        closer_id: user?.id
+        closer_id: user?.profileId
       })
       if (error) throw error
     },
@@ -331,7 +331,7 @@ export default function CrmIntensivoPage() {
     mutationFn: async (data: EventFormData) => {
       const { error } = await supabase.from('intensivo_events').insert({
         ...data,
-        closer_id: user?.id
+        closer_id: user?.profileId
       })
       if (error) throw error
     },

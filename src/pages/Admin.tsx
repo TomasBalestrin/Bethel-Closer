@@ -915,7 +915,7 @@ function TeamGoalDialog({
         const { error } = await supabase
           .from('monthly_goals')
           .upsert({
-            closer_id: member.user_id,
+            closer_id: member.id,
             month,
             year,
             target_calls: goalCalls,
@@ -930,7 +930,7 @@ function TeamGoalDialog({
           await supabase
             .from('monthly_goals')
             .upsert({
-              closer_id: member.user_id,
+              closer_id: member.id,
               month,
               target_calls: goalCalls,
               target_sales: goalSales,
@@ -1197,7 +1197,7 @@ function GoalsTab() {
         const { error } = await supabase
           .from('monthly_goals')
           .upsert({
-            closer_id: member.user_id,
+            closer_id: member.id,
             month,
             year,
             target_calls: goalCalls,
@@ -1209,7 +1209,7 @@ function GoalsTab() {
           await supabase
             .from('monthly_goals')
             .upsert({
-              closer_id: member.user_id,
+              closer_id: member.id,
               month,
               target_calls: goalCalls,
               target_sales: goalSales,

@@ -360,7 +360,7 @@ function TeamContent({ role, userProfileId }: { role: string; userProfileId?: st
       const { error } = await supabase
         .from('monthly_goals')
         .upsert({
-          closer_id: selectedMember.user_id,
+          closer_id: selectedMember.id,
           month,
           year,
           target_calls: memberGoalCalls,
@@ -372,7 +372,7 @@ function TeamContent({ role, userProfileId }: { role: string; userProfileId?: st
         const { error: error2 } = await supabase
           .from('monthly_goals')
           .upsert({
-            closer_id: selectedMember.user_id,
+            closer_id: selectedMember.id,
             month,
             target_calls: memberGoalCalls,
             target_sales: memberGoalSales,
@@ -381,7 +381,7 @@ function TeamContent({ role, userProfileId }: { role: string; userProfileId?: st
 
         if (error2) {
           await supabase.from('monthly_goals').insert({
-            closer_id: selectedMember.user_id,
+            closer_id: selectedMember.id,
             month,
             target_calls: memberGoalCalls,
             target_sales: memberGoalSales,

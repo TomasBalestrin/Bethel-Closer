@@ -283,7 +283,7 @@ export default function CrmCallsPage() {
         sale_value: data.sale_value || null,
         notes: data.notes || null,
         stage: 'call_realizada',
-        closer_id: user?.id
+        closer_id: user?.profileId
       })
       if (error) throw error
     },
