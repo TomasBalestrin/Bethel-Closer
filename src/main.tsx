@@ -1,28 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './index.css'
+import { createOfflineQueryClient, initializeOfflineData } from './services/offlineQueryClient'
+import { OfflineProvider } from './contexts/OfflineContext'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes - data considered fresh
-      gcTime: 1000 * 60 * 30, // 30 minutes - keep unused data in cache
-      retry: 1,
-      refetchOnWindowFocus: false, // Prevent refetch on tab switch
-      refetchOnReconnect: 'always',
-    },
-    mutations: {
-      retry: 0,
-    },
-  },
-})
+// Create query client with offline support
+const queryClient = createOfflineQueryClient()
+
+// Initialize offline data from IndexedDB
+initializeOfflineData(queryClient).catch(console.error)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <OfflineProvider>
+        <App />
+      </OfflineProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 )

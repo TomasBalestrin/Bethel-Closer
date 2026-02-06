@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/authStore'
+import { OfflineBanner } from '@/components/OfflineIndicator'
 
 // Global theme initializer - applies stored theme on app start
 function ThemeInitializer() {
@@ -93,6 +94,7 @@ function App() {
   return (
     <TooltipProvider>
       <ThemeInitializer />
+      <OfflineBanner />
       <Toaster />
       <Sonner />
       <BrowserRouter>
