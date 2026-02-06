@@ -194,10 +194,12 @@ export default function CrmCallsPage() {
   // Auto-sync existing analyzed calls to CRM clients on page load
   useEffect(() => {
     const syncCalls = async () => {
-      if (!user?.id) return
+      // IMPORTANT: Use profileId (profiles.id) not user.id (auth.users.id)
+      // because closer_id in calls table references profiles.id
+      if (!user?.profileId) return
 
       try {
-        const result = await syncExistingCallsToCrm(user.id)
+        const result = await syncExistingCallsToCrm(user.profileId)
         console.log(`[CrmCalls] Sync result:`, result)
         if (result.synced > 0) {
           console.log(`[CrmCalls] Synced ${result.synced} existing calls to CRM`)
@@ -217,7 +219,7 @@ export default function CrmCallsPage() {
     }
 
     syncCalls()
-  }, [user?.id, queryClient])
+  }, [user?.profileId, queryClient])
 
   // Fetch CRM Call clients
   const { data: clients, isLoading } = useQuery({
