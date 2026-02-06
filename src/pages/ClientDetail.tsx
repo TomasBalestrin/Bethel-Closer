@@ -207,7 +207,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: user?.id,
+        user_id: user?.profileId,
         type: 'status_change',
         description: `Status alterado para ${statusLabels[status]}`
       })
@@ -227,7 +227,7 @@ export default function ClientDetailPage() {
     mutationFn: async (content: string) => {
       const { error } = await supabase.from('client_notes').insert({
         client_id: id,
-        user_id: user?.id,
+        user_id: user?.profileId,
         content
       })
       if (error) throw error
@@ -235,7 +235,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: user?.id,
+        user_id: user?.profileId,
         type: 'note',
         description: 'Adicionou uma nota'
       })
@@ -267,7 +267,7 @@ export default function ClientDetailPage() {
       // Log activity
       await supabase.from('client_activities').insert({
         client_id: id,
-        user_id: user?.id,
+        user_id: user?.profileId,
         type: 'call',
         description: `Agendou ligação para ${formatDateTime(data.scheduled_at)}`
       })

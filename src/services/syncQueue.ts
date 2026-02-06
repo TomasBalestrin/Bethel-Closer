@@ -84,7 +84,9 @@ class SyncQueueService {
    */
   private handleOnline(): void {
     console.log('[SyncQueue] Back online, processing queue...');
-    this.processQueue();
+    this.processQueue().catch(err => {
+      console.error('[SyncQueue] Error processing queue after coming online:', err);
+    });
   }
 
   /**
@@ -188,7 +190,11 @@ class SyncQueueService {
 
           // Schedule retry with backoff
           const delay = RETRY_DELAYS[newRetryCount - 1] || RETRY_DELAYS[RETRY_DELAYS.length - 1];
-          setTimeout(() => this.processQueue(), delay);
+          setTimeout(() => {
+            this.processQueue().catch(err => {
+              console.error('[SyncQueue] Error processing queue during retry:', err);
+            });
+          }, delay);
         }
       }
     }
