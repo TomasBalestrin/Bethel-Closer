@@ -641,6 +641,34 @@ export async function importSpecificFiles(
         } else {
           console.log('[DriveSync] Successfully saved analysis')
           result.analyzed++
+
+          // Auto-create CRM Call Client
+          try {
+            const clientName = analysis.identificacao?.nome_lead && analysis.identificacao.nome_lead !== 'nao_informado'
+              ? analysis.identificacao.nome_lead
+              : file.name.replace(/ - Transcript$/i, '').replace(/\s*\([^)]+\)\s*$/, '').trim()
+
+            const { error: crmError } = await supabase
+              .from('crm_call_clients')
+              .insert({
+                name: clientName,
+                niche: analysis.dados_extraidos?.nicho_profissao !== 'nao_informado' ? analysis.dados_extraidos?.nicho_profissao : null,
+                product_offered: analysis.identificacao?.produto_ofertado !== 'nao_informado' ? analysis.identificacao?.produto_ofertado : null,
+                notes: analysis.dados_extraidos?.dor_principal_declarada?.texto !== 'nao_informado' ? analysis.dados_extraidos?.dor_principal_declarada?.texto : null,
+                stage: 'call_realizada',
+                call_date: file.modifiedTime || new Date().toISOString(),
+                closer_id: closerId,
+                has_partner: false
+              })
+
+            if (crmError) {
+              console.warn('[DriveSync] Failed to create CRM client (non-critical):', crmError.message)
+            } else {
+              console.log('[DriveSync] Created CRM client for:', clientName)
+            }
+          } catch (crmErr) {
+            console.warn('[DriveSync] CRM client creation error (non-critical):', crmErr)
+          }
         }
       } catch (aiError) {
         result.errors.push({
