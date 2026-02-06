@@ -193,7 +193,7 @@ export default function SettingsPage() {
 
       await updateProfile({ avatar_url: urlData.publicUrl })
       toast.success('Foto atualizada com sucesso!')
-    } catch (error) {
+    } catch {
       toast.error('Erro ao fazer upload. O bucket de storage pode não estar configurado.')
     }
   }
@@ -206,7 +206,7 @@ export default function SettingsPage() {
       }
       await signOut()
       toast.success('Conta excluída com sucesso')
-    } catch (error) {
+    } catch {
       toast.error('Erro ao excluir conta')
     }
   }

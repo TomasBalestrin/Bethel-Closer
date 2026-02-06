@@ -331,7 +331,9 @@ function GoogleDriveIntegration({ userId }: { userId?: string }) {
         toast.success(`${result.imported} arquivo(s) importado(s), ${result.analyzed} analisado(s)`)
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Erro na sincronização')
+      const errorMessage = error instanceof Error ? error.message : 'Erro na sincronização'
+      setSyncProgress({ status: 'error', message: errorMessage })
+      toast.error(errorMessage)
     } finally {
       setIsSyncing(false)
     }

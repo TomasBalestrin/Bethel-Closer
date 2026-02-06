@@ -812,10 +812,11 @@ export async function analyzeCallTranscript(transcript: string): Promise<Record<
 
     // Try one more time: maybe there are control characters or BOM
     try {
-      // Remove BOM and control characters
+      // Remove BOM and control characters (using Unicode escape to avoid ESLint no-control-regex)
       const cleanedStr = jsonStr
         .replace(/^\uFEFF/, '') // BOM
-        .replace(/[\x00-\x1F\x7F]/g, ' ') // Control chars except space
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001F\u007F]/g, ' ') // Control chars except space
         .replace(/\s+/g, ' ') // Multiple spaces to single
       const parsed2 = JSON.parse(cleanedStr)
       console.log('[OpenAI] Successfully parsed after cleaning control chars')

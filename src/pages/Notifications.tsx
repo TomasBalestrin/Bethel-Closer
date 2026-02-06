@@ -74,7 +74,7 @@ export default function NotificationsPage() {
     const { data: recentCalls } = await supabase
       .from('calls')
       .select(`*, client:clients(name)`)
-      .eq('closer_id', user?.id || '')
+      .eq('closer_id', user?.profileId || '')
       .order('created_at', { ascending: false })
       .limit(10)
 
@@ -124,7 +124,7 @@ export default function NotificationsPage() {
     const { data: recentSales } = await supabase
       .from('clients')
       .select('id, name, sale_value, updated_at')
-      .eq('closer_id', user?.id || '')
+      .eq('closer_id', user?.profileId || '')
       .eq('status', 'closed_won')
       .order('updated_at', { ascending: false })
       .limit(5)
@@ -145,7 +145,7 @@ export default function NotificationsPage() {
     const { data: recentClients } = await supabase
       .from('clients')
       .select('id, name, created_at')
-      .eq('closer_id', user?.id || '')
+      .eq('closer_id', user?.profileId || '')
       .order('created_at', { ascending: false })
       .limit(5)
 

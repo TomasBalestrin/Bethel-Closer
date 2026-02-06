@@ -66,7 +66,7 @@ async function fetchOrCreateProfile(sessionUser: { id: string; email?: string; c
         // Profile creation failed (RLS or trigger conflict) - using defaults
       }
     }
-  } catch (e) {
+  } catch {
     // Profile fetch failed - will use defaults
   }
 
@@ -168,7 +168,7 @@ export const useAuthStore = create<AuthState>()(
               }
             })
           }
-        } catch (error) {
+        } catch {
           set({
             isLoading: false,
             isInitialized: true

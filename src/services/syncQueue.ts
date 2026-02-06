@@ -84,7 +84,9 @@ class SyncQueueService {
    */
   private handleOnline(): void {
     console.log('[SyncQueue] Back online, processing queue...');
-    this.processQueue();
+    this.processQueue().catch(err => {
+      console.error('[SyncQueue] Error processing queue after coming online:', err);
+    });
   }
 
   /**
@@ -188,7 +190,11 @@ class SyncQueueService {
 
           // Schedule retry with backoff
           const delay = RETRY_DELAYS[newRetryCount - 1] || RETRY_DELAYS[RETRY_DELAYS.length - 1];
-          setTimeout(() => this.processQueue(), delay);
+          setTimeout(() => {
+            this.processQueue().catch(err => {
+              console.error('[SyncQueue] Error processing queue during retry:', err);
+            });
+          }, delay);
         }
       }
     }
@@ -248,9 +254,17 @@ class SyncQueueService {
    * Request background sync (if supported)
    */
   async requestBackgroundSync(): Promise<boolean> {
-    if ('serviceWorker' in navigator && 'sync' in (window as any).ServiceWorkerRegistration?.prototype) {
+    // Check if Background Sync API is available
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const swRegistrationPrototype = typeof ServiceWorkerRegistration !== 'undefined'
+      ? ServiceWorkerRegistration.prototype
+      : null;
+    const hasSync = swRegistrationPrototype && 'sync' in swRegistrationPrototype;
+
+    if (hasServiceWorker && hasSync) {
       try {
         const registration = await navigator.serviceWorker.ready;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (registration as any).sync.register('sync-mutations');
         console.log('[SyncQueue] Background sync registered');
         return true;
