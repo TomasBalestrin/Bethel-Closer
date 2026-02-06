@@ -417,6 +417,51 @@ export default function CallsPage() {
         })
         .eq('id', call.id)
 
+      // Auto-create CRM Call Client after successful analysis
+      if (user?.profileId && analysis) {
+        try {
+          // Extract client name from analysis or call
+          let clientName = analysis.identificacao?.nome_lead
+          if (!clientName || clientName === 'nao_informado' || clientName === 'Não informado') {
+            // Try to get from call's client or generate from ai_summary
+            clientName = call.client?.name || `Lead - ${analysis.identificacao?.produto_ofertado || call.id.substring(0, 8)}`
+          }
+
+          // Check if CRM client already exists for this closer with similar name
+          const { data: existingClients } = await supabase
+            .from('crm_call_clients')
+            .select('id, name')
+            .eq('closer_id', user.profileId)
+            .ilike('name', clientName)
+
+          if (!existingClients || existingClients.length === 0) {
+            const { error: crmError } = await supabase
+              .from('crm_call_clients')
+              .insert({
+                name: clientName,
+                niche: analysis.dados_extraidos?.nicho_profissao !== 'nao_informado' ? analysis.dados_extraidos?.nicho_profissao : null,
+                product_offered: analysis.identificacao?.produto_ofertado !== 'nao_informado' ? analysis.identificacao?.produto_ofertado : null,
+                notes: analysis.dados_extraidos?.dor_principal_declarada?.texto !== 'nao_informado' ? analysis.dados_extraidos?.dor_principal_declarada?.texto : null,
+                stage: 'call_realizada',
+                call_date: call.scheduled_at || new Date().toISOString(),
+                closer_id: user.profileId,
+                has_partner: false
+              })
+
+            if (crmError) {
+              console.warn('[Calls] Failed to create CRM client (non-critical):', crmError.message)
+            } else {
+              console.log('[Calls] Created CRM client for:', clientName)
+              queryClient.invalidateQueries({ queryKey: ['crm-call-clients'] })
+            }
+          } else {
+            console.log('[Calls] CRM client already exists:', clientName)
+          }
+        } catch (crmErr) {
+          console.warn('[Calls] CRM client creation error (non-critical):', crmErr)
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['calls-analysis'] })
       toast.success('Análise concluída!')
     } catch (error) {
