@@ -92,11 +92,11 @@ export default function ImportPage() {
         </TabsList>
 
         <TabsContent value="drive">
-          <GoogleDriveIntegration userId={user?.id} />
+          <GoogleDriveIntegration userId={user?.profileId} />
         </TabsContent>
 
         <TabsContent value="transcription">
-          <TranscriptionImport userId={user?.id} />
+          <TranscriptionImport userId={user?.profileId} />
         </TabsContent>
 
         <TabsContent value="csv">

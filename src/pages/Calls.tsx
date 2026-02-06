@@ -341,13 +341,13 @@ export default function CallsPage() {
         }
 
         // Now sync with the obtained token
-        const result = await syncFromDrive(user.id, (progress) => {
+        const result = await syncFromDrive(user.profileId, (progress) => {
           setSyncProgress(progress)
         }, token)
         handleSyncResult(result)
       } else {
         // Already connected: regular sync
-        const result = await syncFromDrive(user.id, (progress) => {
+        const result = await syncFromDrive(user.profileId, (progress) => {
           setSyncProgress(progress)
         })
         handleSyncResult(result)
@@ -356,16 +356,16 @@ export default function CallsPage() {
       setSyncProgress({ status: 'error', message: error instanceof Error ? error.message : 'Erro na sincronização' })
       setTimeout(() => setSyncProgress(null), 5000)
     }
-  }, [user?.id, isSyncing, handleSyncResult])
+  }, [user?.profileId, isSyncing, handleSyncResult])
 
   // Auto-sync on page load (silent, no popup)
   useEffect(() => {
-    if (!user?.id || !isDriveConnected()) return
+    if (!user?.profileId || !isDriveConnected()) return
 
     let cancelled = false
 
     const autoSync = async () => {
-      const result = await trySilentSync(user.id, (progress) => {
+      const result = await trySilentSync(user.profileId, (progress) => {
         if (!cancelled) setSyncProgress(progress)
       })
       if (result && !cancelled) {
@@ -387,7 +387,7 @@ export default function CallsPage() {
       clearTimeout(initialTimer)
       clearInterval(intervalTimer)
     }
-  }, [user?.id, handleSyncResult])
+  }, [user?.profileId, handleSyncResult])
 
   const handleAnalyzeCall = async (call: Call & { client?: Client }) => {
     if (!call.notes) {
