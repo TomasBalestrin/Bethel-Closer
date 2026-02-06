@@ -258,7 +258,7 @@ export default function ClientsPage() {
     mutationFn: async (data: ClientFormData) => {
       const { error } = await supabase.from('clients').insert({
         ...data,
-        closer_id: user?.id
+        closer_id: user?.profileId
       })
       if (error) throw error
     },
