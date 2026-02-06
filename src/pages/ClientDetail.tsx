@@ -311,6 +311,17 @@ export default function ClientDetailPage() {
     }
   }
 
+  // useMemo must be called unconditionally before any early returns
+  const { completedCalls, scheduledCalls } = useMemo(() => {
+    if (!calls) return { completedCalls: 0, scheduledCalls: 0 }
+    let completed = 0, scheduled = 0
+    for (const c of calls) {
+      if (c.status === 'completed') completed++
+      else if (c.status === 'scheduled') scheduled++
+    }
+    return { completedCalls: completed, scheduledCalls: scheduled }
+  }, [calls])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -329,16 +340,6 @@ export default function ClientDetailPage() {
       </div>
     )
   }
-
-  const { completedCalls, scheduledCalls } = useMemo(() => {
-    if (!calls) return { completedCalls: 0, scheduledCalls: 0 }
-    let completed = 0, scheduled = 0
-    for (const c of calls) {
-      if (c.status === 'completed') completed++
-      else if (c.status === 'scheduled') scheduled++
-    }
-    return { completedCalls: completed, scheduledCalls: scheduled }
-  }, [calls])
 
   return (
     <div className="space-y-6">
