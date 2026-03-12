@@ -49,7 +49,9 @@ const TeamPage = React.lazy(() => import('@/pages/Team'))
 const AdminPage = React.lazy(() => import('@/pages/Admin'))
 const CrmCallsPage = React.lazy(() => import('@/pages/CrmCalls'))
 const CrmIntensivoPage = React.lazy(() => import('@/pages/CrmIntensivo'))
+const PortfolioPage = React.lazy(() => import('@/pages/Portfolio'))
 const ImportPage = React.lazy(() => import('@/pages/Import'))
+const InstallPage = React.lazy(() => import('@/pages/Install'))
 const NotFoundPage = React.lazy(() => import('@/pages/NotFound'))
 
 // Layout (kept eager - needed on every authenticated route)
@@ -116,6 +118,7 @@ function App() {
               <Route path="calls" element={<CallsPage />} />
               <Route path="crm-calls" element={<CrmCallsPage />} />
               <Route path="crm-intensivo" element={<CrmIntensivoPage />} />
+              <Route path="portfolio" element={<PortfolioPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="team" element={<TeamPage />} />
@@ -123,6 +126,7 @@ function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="import" element={<ImportPage />} />
             </Route>
+            <Route path="/install" element={<InstallPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
