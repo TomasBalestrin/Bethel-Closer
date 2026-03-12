@@ -21,6 +21,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { SkipLink } from './SkipLink'
+import { usePrefetch } from '@/hooks/usePrefetch'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/stores/authStore'
@@ -35,6 +37,7 @@ interface SidebarContentProps {
   setCollapsed: (value: boolean) => void
   setMobileOpen: (value: boolean) => void
   handleSignOut: () => void
+  onPrefetch?: (href: string) => void
 }
 
 // Navigation items
@@ -58,7 +61,7 @@ const adminNavigation = [
 ]
 
 // Sidebar Content Component (extracted to avoid re-creation on each render)
-function SidebarContent({ navigation, collapsed, setCollapsed, setMobileOpen, handleSignOut }: SidebarContentProps) {
+function SidebarContent({ navigation, collapsed, setCollapsed, setMobileOpen, handleSignOut, onPrefetch }: SidebarContentProps) {
   return (
     <>
       {/* Logo */}
@@ -114,6 +117,7 @@ function SidebarContent({ navigation, collapsed, setCollapsed, setMobileOpen, ha
               key={item.name}
               to={item.href}
               onClick={() => setMobileOpen(false)}
+              onMouseEnter={() => onPrefetch?.(item.href)}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
@@ -309,10 +313,27 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { user, profile, signOut, initialize } = useAuthStore()
   const navigate = useNavigate()
+  const { prefetchCalls, prefetchClients, prefetchPortfolio } = usePrefetch()
 
   useEffect(() => {
     initialize()
   }, [initialize])
+
+  // Handle prefetch on hover
+  const handlePrefetch = useCallback((href: string) => {
+    switch (href) {
+      case '/calls':
+        prefetchCalls()
+        break
+      case '/crm-calls':
+      case '/clients':
+        prefetchClients()
+        break
+      case '/portfolio':
+        prefetchPortfolio()
+        break
+    }
+  }, [prefetchCalls, prefetchClients, prefetchPortfolio])
 
   const handleSignOut = async () => {
     try {
@@ -334,6 +355,8 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SkipLink />
+
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
@@ -355,6 +378,7 @@ export function AppLayout() {
           setCollapsed={setCollapsed}
           setMobileOpen={setMobileOpen}
           handleSignOut={handleSignOut}
+          onPrefetch={handlePrefetch}
         />
       </aside>
 
@@ -371,6 +395,7 @@ export function AppLayout() {
           setCollapsed={setCollapsed}
           setMobileOpen={setMobileOpen}
           handleSignOut={handleSignOut}
+          onPrefetch={handlePrefetch}
         />
       </aside>
 
@@ -403,7 +428,7 @@ export function AppLayout() {
         </header>
 
         {/* Page content */}
-        <main className="p-4 lg:p-8">
+        <main id="main-content" className="p-4 lg:p-8">
           <Outlet />
         </main>
       </div>

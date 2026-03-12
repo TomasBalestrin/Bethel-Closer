@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,24 +6,14 @@ import { z } from 'zod'
 import {
   Plus,
   Search,
-  Phone,
-  Calendar,
-  Clock,
   Loader2,
-  MoreVertical,
-  Pencil,
   Trash2,
-  DollarSign,
-  MapPin,
-  Settings as SettingsIcon,
   RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -49,26 +39,20 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { supabase } from '@/services/supabase'
 import { syncExistingCallsToCrm } from '@/services/driveSync'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
-import type { CrmCallClient, CrmCallStage } from '@/types'
-import { formatDistanceToNow } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import type { CrmCallClient } from '@/types'
+import { KanbanBoard } from '@/components/crm/KanbanBoard'
+import { CRMSettingsButton } from '@/components/crm/CRMSettingsButton'
 
 // Schema
 const clientSchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório'),
-  phone: z.string().optional().refine(v => !v || v.replace(/\D/g, '').length >= 10, 'Telefone inválido (mín. 10 dígitos)'),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
+  name: z.string().min(1, 'Nome e obrigatorio'),
+  phone: z.string().optional().refine(v => !v || v.replace(/\D/g, '').length >= 10, 'Telefone invalido (min. 10 digitos)'),
+  email: z.string().email('Email invalido').optional().or(z.literal('')),
   company: z.string().optional(),
   niche: z.string().optional(),
   monthly_revenue: z.number().optional(),
@@ -77,66 +61,21 @@ const clientSchema = z.object({
   sdr: z.string().optional(),
   product_offered: z.string().optional(),
   sale_value: z.number().optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  is_super_hot: z.boolean().default(false),
+  is_indication: z.boolean().default(false)
 })
 
 type ClientFormData = z.infer<typeof clientSchema>
-
-// Column definitions
-interface KanbanColumn {
-  id: CrmCallStage
-  title: string
-  subtitle?: string
-  color: string
-  borderColor: string
-  icon: React.ReactNode
-}
-
-const columns: KanbanColumn[] = [
-  {
-    id: 'call_realizada',
-    title: 'Call Realizada',
-    subtitle: 'Preencher dados',
-    color: 'bg-blue-50',
-    borderColor: 'border-t-blue-500',
-    icon: <Phone className="h-4 w-4 text-blue-600" />
-  },
-  {
-    id: 'repitch',
-    title: 'RePitch',
-    subtitle: '',
-    color: 'bg-orange-50',
-    borderColor: 'border-t-orange-500',
-    icon: <Clock className="h-4 w-4 text-orange-600" />
-  },
-  {
-    id: 'pos_call_0_2',
-    title: 'Pós Call 0-2 dias',
-    subtitle: 'Depoimentos e Conexão',
-    color: 'bg-green-50',
-    borderColor: 'border-t-green-500',
-    icon: <Calendar className="h-4 w-4 text-green-600" />
-  },
-  {
-    id: 'pos_call_3_7',
-    title: 'Pós Call 3-7 dias',
-    subtitle: 'Presente e Mentoria',
-    color: 'bg-teal-50',
-    borderColor: 'border-t-teal-500',
-    icon: <MapPin className="h-4 w-4 text-teal-600" />
-  }
-]
 
 export default function CrmCallsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<CrmCallClient | null>(null)
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [draggedClientId, setDraggedClientId] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
-  const dragOverColumnRef = useRef<CrmCallStage | null>(null)
 
   const form = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -152,7 +91,9 @@ export default function CrmCallsPage() {
       sdr: '',
       product_offered: '',
       sale_value: undefined,
-      notes: ''
+      notes: '',
+      is_super_hot: false,
+      is_indication: false
     }
   })
 
@@ -171,7 +112,9 @@ export default function CrmCallsPage() {
         sdr: client.sdr || '',
         product_offered: client.product_offered || '',
         sale_value: client.sale_value || undefined,
-        notes: client.notes || ''
+        notes: client.notes || '',
+        is_super_hot: client.is_super_hot || false,
+        is_indication: client.is_indication || false
       })
     } else {
       setEditingClient(null)
@@ -187,7 +130,9 @@ export default function CrmCallsPage() {
         sdr: '',
         product_offered: '',
         sale_value: undefined,
-        notes: ''
+        notes: '',
+        is_super_hot: false,
+        is_indication: false
       })
     }
     setIsDialogOpen(true)
@@ -237,9 +182,9 @@ export default function CrmCallsPage() {
         queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
         toast.success(`${result.synced} cliente(s) criado(s) das calls analisadas!`)
       } else if (result.skipped > 0 && result.errors.length === 0) {
-        toast.info(`Todas as ${result.skipped} calls já têm clientes no CRM`)
+        toast.info(`Todas as ${result.skipped} calls ja tem clientes no CRM`)
       } else if (result.errors.length > 0) {
-        toast.error(`Erros na sincronização: ${result.errors.join(', ')}`)
+        toast.error(`Erros na sincronizacao: ${result.errors.join(', ')}`)
       } else {
         toast.info('Nenhuma call analisada encontrada para sincronizar')
       }
@@ -284,22 +229,6 @@ export default function CrmCallsPage() {
     )
   }, [clients, searchQuery])
 
-  // Group by stage
-  const clientsByStage = useMemo(() => {
-    const grouped: Record<CrmCallStage, CrmCallClient[]> = {
-      call_realizada: [],
-      repitch: [],
-      pos_call_0_2: [],
-      pos_call_3_7: []
-    }
-    filteredClients.forEach(c => {
-      if (grouped[c.stage]) {
-        grouped[c.stage].push(c)
-      }
-    })
-    return grouped
-  }, [filteredClients])
-
   const createMutation = useMutation({
     mutationFn: async (data: ClientFormData) => {
       const { error } = await supabase.from('crm_call_clients').insert({
@@ -314,7 +243,10 @@ export default function CrmCallsPage() {
         product_offered: data.product_offered || null,
         sale_value: data.sale_value || null,
         notes: data.notes || null,
+        is_super_hot: data.is_super_hot || false,
+        is_indication: data.is_indication || false,
         stage: 'call_realizada',
+        stage_entered_at: new Date().toISOString(),
         closer_id: user?.profileId
       })
       if (error) throw error
@@ -353,7 +285,7 @@ export default function CrmCallsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['crm-call-clients'] })
-      toast.success('Cliente excluído!')
+      toast.success('Cliente excluido!')
       setDeleteClientId(null)
     },
     onError: (error) => {
@@ -369,45 +301,15 @@ export default function CrmCallsPage() {
     }
   }
 
-  // Drag and Drop handlers
-  const handleDragStart = (e: React.DragEvent, clientId: string) => {
-    setDraggedClientId(clientId)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', clientId)
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '0.5'
-    }
+  // Handler for updating client (used by KanbanBoard)
+  const handleUpdateClient = (id: string, data: Partial<CrmCallClient>) => {
+    updateMutation.mutate({ id, data })
   }
 
-  const handleDragEnd = (e: React.DragEvent) => {
-    setDraggedClientId(null)
-    dragOverColumnRef.current = null
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '1'
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent, stage: CrmCallStage) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    dragOverColumnRef.current = stage
-  }
-
-  const handleDrop = (e: React.DragEvent, stage: CrmCallStage) => {
-    e.preventDefault()
-    const clientId = e.dataTransfer.getData('text/plain')
-    if (clientId) {
-      const client = clients?.find(c => c.id === clientId)
-      if (client && client.stage !== stage) {
-        updateMutation.mutate({ id: clientId, data: { stage } })
-      }
-    }
-    setDraggedClientId(null)
-    dragOverColumnRef.current = null
-  }
-
-  const moveToStage = (clientId: string, stage: CrmCallStage) => {
-    updateMutation.mutate({ id: clientId, data: { stage } })
+  // Handler for portfolio migration (when moving to pos_21_carterizacao)
+  const handlePortfolioMigration = (client: CrmCallClient) => {
+    // TODO: Implement portfolio migration logic
+    toast.info(`Cliente ${client.name} movido para carterizacao. Migracao para portfolio disponivel em breve.`)
   }
 
   return (
@@ -420,7 +322,7 @@ export default function CrmCallsPage() {
             Arraste os cards para atualizar o status
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             onClick={handleManualSync}
@@ -430,6 +332,7 @@ export default function CrmCallsPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
             {isSyncing ? 'Sincronizando...' : 'Sincronizar Calls'}
           </Button>
+          <CRMSettingsButton />
           <Button onClick={() => openDialog()}>
             <Plus className="h-4 w-4 mr-2" />
             Novo Cliente
@@ -450,64 +353,15 @@ export default function CrmCallsPage() {
         </div>
       </div>
 
-      {/* Kanban Board */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className={`flex-shrink-0 w-[280px] sm:w-[300px] rounded-lg border-t-4 ${column.borderColor} bg-card border border-border`}
-              onDragOver={(e) => handleDragOver(e, column.id)}
-              onDrop={(e) => handleDrop(e, column.id)}
-            >
-              {/* Column Header */}
-              <div className="p-3 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {column.icon}
-                    <span className="font-semibold text-sm">{column.title}</span>
-                    <Badge variant="secondary" className="h-5 min-w-[20px] flex items-center justify-center text-xs">
-                      {clientsByStage[column.id]?.length || 0}
-                    </Badge>
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                    <SettingsIcon className="h-4 w-4" />
-                  </Button>
-                </div>
-                {column.subtitle && (
-                  <p className="text-xs text-muted-foreground mt-1">{column.subtitle}</p>
-                )}
-              </div>
-
-              {/* Column Content */}
-              <div className="p-2 space-y-2 min-h-[200px]">
-                {clientsByStage[column.id]?.length === 0 ? (
-                  <div className="flex items-center justify-center h-[120px] border-2 border-dashed border-border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Arraste clientes aqui</p>
-                  </div>
-                ) : (
-                  clientsByStage[column.id]?.map((client) => (
-                    <ClientCard
-                      key={client.id}
-                      client={client}
-                      isDragging={draggedClientId === client.id}
-                      onDragStart={(e) => handleDragStart(e, client.id)}
-                      onDragEnd={handleDragEnd}
-                      onEdit={() => openDialog(client)}
-                      onDelete={() => setDeleteClientId(client.id)}
-                      onMoveToStage={(stage) => moveToStage(client.id, stage)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Kanban Board - 10 Columns */}
+      <KanbanBoard
+        clients={filteredClients}
+        isLoading={isLoading}
+        onUpdateClient={handleUpdateClient}
+        onEditClient={openDialog}
+        onDeleteClient={(id) => setDeleteClientId(id)}
+        onPortfolioMigration={handlePortfolioMigration}
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -523,7 +377,7 @@ export default function CrmCallsPage() {
               {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
             </DialogTitle>
             <DialogDescription>
-              {editingClient ? 'Atualize as informações do cliente' : 'Adicione um novo cliente ao pipeline'}
+              {editingClient ? 'Atualize as informacoes do cliente' : 'Adicione um novo cliente ao pipeline'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -549,9 +403,9 @@ export default function CrmCallsPage() {
               </div>
             </div>
 
-            {/* Negócio */}
+            {/* Negocio */}
             <div className="space-y-1 pt-2">
-              <p className="text-sm font-medium text-muted-foreground">Negócio</p>
+              <p className="text-sm font-medium text-muted-foreground">Negocio</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -579,8 +433,28 @@ export default function CrmCallsPage() {
                     className="rounded border-gray-300"
                     {...form.register('has_partner')}
                   />
-                  <span className="text-sm">Tem sócio</span>
+                  <span className="text-sm">Tem socio</span>
                 </label>
+              </div>
+            </div>
+
+            {/* Flags */}
+            <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_super_hot" className="text-sm">Super Hot</Label>
+                <Switch
+                  id="is_super_hot"
+                  checked={form.watch('is_super_hot')}
+                  onCheckedChange={(checked) => form.setValue('is_super_hot', checked)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_indication" className="text-sm">Indicacao</Label>
+                <Switch
+                  id="is_indication"
+                  checked={form.watch('is_indication')}
+                  onCheckedChange={(checked) => form.setValue('is_indication', checked)}
+                />
               </div>
             </div>
 
@@ -597,9 +471,9 @@ export default function CrmCallsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Nenhum</SelectItem>
-                    <SelectItem value="organico">Orgânico</SelectItem>
-                    <SelectItem value="indicacao">Indicação</SelectItem>
-                    <SelectItem value="trafego_pago">Tráfego Pago</SelectItem>
+                    <SelectItem value="organico">Organico</SelectItem>
+                    <SelectItem value="indicacao">Indicacao</SelectItem>
+                    <SelectItem value="trafego_pago">Trafego Pago</SelectItem>
                     <SelectItem value="evento">Evento</SelectItem>
                     <SelectItem value="social">Redes Sociais</SelectItem>
                   </SelectContent>
@@ -653,9 +527,9 @@ export default function CrmCallsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Observações</Label>
+              <Label>Observacoes</Label>
               <Textarea
-                placeholder="Anotações sobre o cliente..."
+                placeholder="Anotacoes sobre o cliente..."
                 rows={2}
                 {...form.register('notes')}
               />
@@ -686,7 +560,7 @@ export default function CrmCallsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Cliente</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir este cliente do pipeline? Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir este cliente do pipeline? Esta acao nao pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -702,103 +576,5 @@ export default function CrmCallsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
-}
-
-// Client Card Component
-interface ClientCardProps {
-  client: CrmCallClient
-  isDragging: boolean
-  onDragStart: (e: React.DragEvent) => void
-  onDragEnd: (e: React.DragEvent) => void
-  onEdit: () => void
-  onDelete: () => void
-  onMoveToStage: (stage: CrmCallStage) => void
-}
-
-function ClientCard({ client, isDragging, onDragStart, onDragEnd, onEdit, onDelete, onMoveToStage }: ClientCardProps) {
-  const timeAgo = client.call_date
-    ? formatDistanceToNow(new Date(client.call_date), { locale: ptBR, addSuffix: false })
-    : client.created_at
-    ? formatDistanceToNow(new Date(client.created_at), { locale: ptBR, addSuffix: false })
-    : null
-
-  return (
-    <Card
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      className={`cursor-grab active:cursor-grabbing transition-all ${isDragging ? 'opacity-50 scale-95' : 'hover:shadow-md'}`}
-    >
-      <CardContent className="p-3">
-        <div className="flex items-start justify-between mb-2">
-          <h4 className="font-semibold text-sm">{client.name}</h4>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 -mr-1 -mt-1">
-                <MoreVertical className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Editar
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {columns.filter(col => col.id !== client.stage).map(col => (
-                <DropdownMenuItem key={col.id} onClick={() => onMoveToStage(col.id)}>
-                  {col.icon}
-                  <span className="ml-2">Mover para {col.title}</span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Excluir
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="space-y-1.5 text-xs text-muted-foreground">
-          {client.call_date && (
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-3 w-3" />
-              <span>{new Date(client.call_date).toLocaleDateString('pt-BR')}</span>
-              {timeAgo && (
-                <>
-                  <Clock className="h-3 w-3 ml-1" />
-                  <span>{timeAgo}</span>
-                </>
-              )}
-            </div>
-          )}
-          {!client.call_date && timeAgo && (
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />
-              <span>{timeAgo}</span>
-            </div>
-          )}
-          {client.phone && (
-            <div className="flex items-center gap-1.5">
-              <Phone className="h-3 w-3" />
-              <span>{client.phone}</span>
-            </div>
-          )}
-          {(client.sale_value != null && client.sale_value > 0) && (
-            <div className="flex items-center gap-1.5">
-              <DollarSign className="h-3 w-3" />
-              <span>R$ {client.sale_value.toLocaleString('pt-BR')}</span>
-            </div>
-          )}
-          {client.niche && (
-            <div className="flex items-center gap-1.5">
-              <MapPin className="h-3 w-3" />
-              <span>{client.niche}</span>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   )
 }
