@@ -33,15 +33,15 @@
     --ring: 240 98% 16%;
     --radius: 0.75rem;
 
-    /* Sidebar variables - Light theme */
-    --sidebar: 0 0% 98%;
-    --sidebar-foreground: 224 76% 4%;
-    --sidebar-primary: 240 98% 48%;
+    /* Sidebar variables - Always dark (navy) for contrast */
+    --sidebar: 224 76% 4%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 240 98% 16%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 224 30% 93%;
-    --sidebar-accent-foreground: 224 76% 4%;
-    --sidebar-border: 224 20% 90%;
-    --sidebar-ring: 240 98% 48%;
+    --sidebar-accent: 224 76% 10%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 224 76% 10%;
+    --sidebar-ring: 240 98% 16%;
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(224 76% 4%) 0%, hsl(240 98% 16%) 100%);
@@ -84,14 +84,14 @@
     --ring: 240 98% 50%;
 
     /* Sidebar variables dark */
-    --sidebar: 224 76% 2%;
+    --sidebar: 224 76% 3%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 240 98% 50%;
+    --sidebar-primary: 240 98% 25%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 224 50% 10%;
+    --sidebar-accent: 224 76% 8%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 224 50% 12%;
-    --sidebar-ring: 240 98% 50%;
+    --sidebar-border: 224 76% 8%;
+    --sidebar-ring: 240 98% 25%;
 
     /* Gradients dark */
     --gradient-primary: linear-gradient(135deg, hsl(224 76% 8%) 0%, hsl(240 98% 20%) 100%);
