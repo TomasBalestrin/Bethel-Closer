@@ -1,17 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Activity,
   AlertTriangle,
-  CheckCircle,
-  Clock,
   Server,
   Zap,
-  TrendingUp,
   AlertCircle
 } from 'lucide-react'
 import { SystemMetrics24h } from '@/types'

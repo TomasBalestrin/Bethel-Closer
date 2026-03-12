@@ -38,7 +38,7 @@ export function MonthlyGoalBar() {
       const year = now.getFullYear()
 
       // Get goal
-      const { data: goal, error: goalError } = await supabase
+      const { data: goal } = await supabase
         .from('monthly_goals')
         .select('*')
         .eq('closer_id', user?.profileId)
@@ -61,7 +61,7 @@ export function MonthlyGoalBar() {
         salesQuery = salesQuery.eq('closer_id', user.profileId)
       }
 
-      const { data: sales, error: salesError } = await salesQuery
+      const { data: sales } = await salesQuery
 
       const totalSale = sales?.reduce((sum, s) => sum + (s.sale_value || 0), 0) || 0
 
@@ -177,14 +177,6 @@ export function MonthlyGoalBar() {
       </Card>
     )
   }
-
-  const progressColor = data.progress >= 100
-    ? 'bg-green-500'
-    : data.progress >= 75
-      ? 'bg-blue-500'
-      : data.progress >= 50
-        ? 'bg-yellow-500'
-        : 'bg-primary'
 
   return (
     <Card>

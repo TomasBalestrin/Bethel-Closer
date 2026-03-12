@@ -23,7 +23,6 @@ import {
   DollarSign,
   Cpu,
   FileText,
-  TrendingUp,
   Zap
 } from 'lucide-react'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
@@ -40,7 +39,7 @@ export function CostDashboard() {
   const [modelFilter, setModelFilter] = useState<string>('all')
 
   // Fetch costs
-  const { data: costs, isLoading } = useQuery({
+  const { data: costs } = useQuery({
     queryKey: ['api-costs', dateRange, serviceFilter, modelFilter],
     queryFn: async () => {
       let query = supabase

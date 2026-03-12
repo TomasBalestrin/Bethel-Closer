@@ -6,7 +6,6 @@ import { z } from 'zod'
 import {
   Plus,
   Search,
-  Phone,
   Loader2,
   Trash2,
   RefreshCw

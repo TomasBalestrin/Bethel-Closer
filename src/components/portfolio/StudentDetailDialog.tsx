@@ -3,9 +3,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Loader2,
-  Phone,
-  Mail,
-  Building2,
   Calendar,
   TrendingUp,
   Activity,

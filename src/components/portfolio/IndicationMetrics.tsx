@@ -1,4 +1,4 @@
-import { UserPlus, Phone, Flame, CheckCircle2, TrendingUp } from 'lucide-react'
+import { UserPlus, Phone, CheckCircle2, TrendingUp } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import type { PortfolioMetrics } from '@/types'
 

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
 import { Button } from '@/components/ui/button'
@@ -6,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -17,14 +15,11 @@ import {
 } from '@/components/ui/table'
 import {
   RefreshCw,
-  FileText,
   AlertCircle,
   CheckCircle,
   Clock,
   Loader2,
-  Play,
-  RotateCcw,
-  Trash2
+  RotateCcw
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -33,10 +28,9 @@ import { toast } from 'sonner'
 
 export function ImportStatusPanel() {
   const queryClient = useQueryClient()
-  const [processingBatch, setProcessingBatch] = useState<number | null>(null)
 
   // Fetch import stats
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats } = useQuery({
     queryKey: ['import-stats'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -62,7 +56,7 @@ export function ImportStatusPanel() {
   })
 
   // Fetch recent files
-  const { data: recentFiles, isLoading: filesLoading } = useQuery({
+  const { data: recentFiles } = useQuery({
     queryKey: ['recent-imports'],
     queryFn: async () => {
       const { data, error } = await supabase

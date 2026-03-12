@@ -76,12 +76,6 @@ export function QuotaProgressBar() {
     }).format(value)
   }
 
-  const progressColor = data?.progress && data.progress >= 100
-    ? 'bg-green-500'
-    : data?.progress && data.progress >= 75
-      ? 'bg-yellow-500'
-      : 'bg-primary'
-
   return (
     <Card>
       <CardHeader className="pb-2">

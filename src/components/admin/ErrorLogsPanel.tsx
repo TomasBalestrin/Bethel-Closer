@@ -47,12 +47,12 @@ export function ErrorLogsPanel() {
   const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all')
   const [serviceFilter, setServiceFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedLog, setSelectedLog] = useState<SystemLog | null>(null)
+  const [, setSelectedLog] = useState<SystemLog | null>(null)
 
   const pageSize = 25
 
   // Fetch logs
-  const { data: logsData, isLoading } = useQuery({
+  const { data: logsData } = useQuery({
     queryKey: ['system-logs', page, levelFilter, serviceFilter, searchQuery],
     queryFn: async () => {
       let query = supabase
