@@ -1,7 +1,7 @@
 // Bethel Closer Service Worker - Offline Support
-const CACHE_NAME = 'bethel-closer-v1';
-const STATIC_CACHE = 'bethel-static-v1';
-const DATA_CACHE = 'bethel-data-v1';
+const CACHE_NAME = 'bethel-closer-v2';
+const STATIC_CACHE = 'bethel-static-v2';
+const DATA_CACHE = 'bethel-data-v2';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -129,9 +129,36 @@ async function cacheFirstStrategy(request) {
   }
 }
 
+// URLs that should never be intercepted by service worker
+function shouldSkipRequest(url) {
+  // Skip auth endpoints - these must never be cached or intercepted
+  if (url.pathname.includes('/auth/')) {
+    return true;
+  }
+  // Skip realtime/websocket connections
+  if (url.pathname.includes('/realtime/')) {
+    return true;
+  }
+  // Skip storage endpoints
+  if (url.pathname.includes('/storage/')) {
+    return true;
+  }
+  // Skip functions endpoints
+  if (url.pathname.includes('/functions/')) {
+    return true;
+  }
+  return false;
+}
+
 // Fetch event handler
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
+
+  // Skip requests that should not be handled by SW
+  if (shouldSkipRequest(url)) {
+    return; // Let the browser handle it normally
+  }
 
   // Skip non-GET requests for caching (but still intercept for offline queue)
   if (request.method !== 'GET') {
@@ -152,14 +179,16 @@ self.addEventListener('fetch', (event) => {
 
 // Handle mutation requests (POST, PUT, DELETE, PATCH)
 async function handleMutationRequest(request) {
+  // Clone request BEFORE consuming it
+  const clonedRequest = request.clone();
+
   try {
     const response = await fetch(request);
     return response;
   } catch (error) {
     console.log('[SW] Mutation failed, queueing for sync:', request.url);
 
-    // Clone request data for queuing
-    const clonedRequest = request.clone();
+    // Use the pre-cloned request
     const body = await clonedRequest.text();
 
     // Store in IndexedDB via message to main thread
