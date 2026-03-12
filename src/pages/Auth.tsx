@@ -139,11 +139,11 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right Side - Login Form */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 bg-background relative">
+      {/* Right Side - Login Form - Always Light */}
+      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 bg-white relative">
         {/* Subtle background pattern for light side */}
         <div className="absolute inset-0 opacity-[0.02]" style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)',
+          backgroundImage: 'radial-gradient(circle at 1px 1px, #030712 1px, transparent 0)',
           backgroundSize: '32px 32px'
         }} />
 
@@ -151,25 +151,25 @@ export default function AuthPage() {
           {/* Mobile Logo */}
           <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
             <img src={logo} alt="Bethel Closer" className="h-14 w-auto" />
-            <span className="text-2xl font-bold">Bethel Closer</span>
+            <span className="text-2xl font-bold text-gray-900">Bethel Closer</span>
           </div>
 
           {/* Welcome text */}
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-foreground mb-2">Bem-vindo de volta</h2>
-            <p className="text-muted-foreground">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Bem-vindo de volta</h2>
+            <p className="text-gray-500">
               Entre na sua conta para continuar
             </p>
           </div>
 
           {/* Mobile Valor do Dia */}
           <div className="lg:hidden mb-8">
-            <div className="bg-muted/50 border border-border rounded-xl p-5">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
               <div className="flex items-start gap-3">
-                <Quote className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                <Quote className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-semibold text-blue-500 uppercase tracking-wider mb-1.5">Valor do dia</p>
-                  <p className="text-foreground text-sm italic leading-relaxed">"{dailyValue}"</p>
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1.5">Valor do dia</p>
+                  <p className="text-gray-900 text-sm italic leading-relaxed">"{dailyValue}"</p>
                 </div>
               </div>
             </div>
@@ -178,38 +178,38 @@ export default function AuthPage() {
           {/* Login Form */}
           <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-muted-foreground" />
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
                 <Input
                   id="email"
                   type="email"
                   placeholder="seu@email.com"
-                  className="pl-11 h-12 bg-muted/30 border-border/50 focus:border-blue-500/50 focus:ring-blue-500/20 transition-all rounded-xl"
+                  className="pl-11 h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500/20 transition-all rounded-xl"
                   {...loginForm.register('email')}
                 />
               </div>
               {loginForm.formState.errors.email && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-red-500">
                   {loginForm.formState.errors.email.message}
                 </p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Senha</Label>
+              <Label htmlFor="password" className="text-sm font-medium text-gray-700">Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-muted-foreground" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
                 <Input
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  className="pl-11 h-12 bg-muted/30 border-border/50 focus:border-blue-500/50 focus:ring-blue-500/20 transition-all rounded-xl"
+                  className="pl-11 h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500/20 transition-all rounded-xl"
                   {...loginForm.register('password')}
                 />
               </div>
               {loginForm.formState.errors.password && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-red-500">
                   {loginForm.formState.errors.password.message}
                 </p>
               )}
@@ -217,7 +217,7 @@ export default function AuthPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 bg-gradient-to-r from-[#0a1225] via-[#131f42] to-[#1a237e] hover:shadow-lg hover:shadow-blue-900/20 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 text-base font-semibold rounded-xl"
+              className="w-full h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-lg hover:shadow-blue-500/25 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 text-base font-semibold rounded-xl"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -231,7 +231,7 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-8">
+          <p className="text-center text-sm text-gray-500 mt-8">
             Não tem uma conta? Fale com seu administrador.
           </p>
         </div>
