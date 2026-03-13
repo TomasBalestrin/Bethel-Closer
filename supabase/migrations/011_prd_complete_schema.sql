@@ -1714,7 +1714,25 @@ CREATE POLICY "System insert client backups" ON clients_backup FOR INSERT WITH C
 CREATE POLICY "Admins view audit logs" ON admin_audit_logs FOR SELECT USING (has_role(auth.uid(), 'admin'));
 CREATE POLICY "System insert audit logs" ON admin_audit_logs FOR INSERT WITH CHECK (true);
 
--- Daily verses policies
+-- Daily verses policies (drop existing first to avoid conflicts)
+DROP POLICY IF EXISTS "Anyone can view verses" ON daily_verses;
+DROP POLICY IF EXISTS "Admins manage verses" ON daily_verses;
+DROP POLICY IF EXISTS "daily_verses_select_policy" ON daily_verses;
+DROP POLICY IF EXISTS "daily_verses_insert_policy" ON daily_verses;
+DROP POLICY IF EXISTS "daily_verses_update_policy" ON daily_verses;
+DROP POLICY IF EXISTS "daily_verses_delete_policy" ON daily_verses;
+-- Drop any policy referencing user_id (common naming patterns)
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT policyname FROM pg_policies WHERE tablename = 'daily_verses' AND schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON daily_verses', pol.policyname);
+  END LOOP;
+END $$;
+
 CREATE POLICY "Anyone can view verses" ON daily_verses FOR SELECT USING (true);
 CREATE POLICY "Admins manage verses" ON daily_verses FOR ALL USING (has_role(auth.uid(), 'admin'));
 
