@@ -1,14 +1,48 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create enum types
-CREATE TYPE user_role AS ENUM ('admin', 'closer', 'lider');
-CREATE TYPE client_status AS ENUM ('lead', 'contacted', 'negotiating', 'closed_won', 'closed_lost');
-CREATE TYPE client_source AS ENUM ('organic', 'referral', 'ads', 'event', 'other');
-CREATE TYPE ticket_type AS ENUM ('29_90', '12k', '80k');
-CREATE TYPE call_status AS ENUM ('scheduled', 'completed', 'no_show', 'rescheduled', 'cancelled');
-CREATE TYPE call_classification AS ENUM ('hot', 'warm', 'cold', 'not_qualified');
-CREATE TYPE activity_type AS ENUM ('call', 'email', 'meeting', 'note', 'status_change');
+-- Create enum types (with IF NOT EXISTS check)
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'closer', 'lider');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE client_status AS ENUM ('lead', 'contacted', 'negotiating', 'closed_won', 'closed_lost');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE client_source AS ENUM ('organic', 'referral', 'ads', 'event', 'other');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE ticket_type AS ENUM ('29_90', '12k', '80k');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE call_status AS ENUM ('scheduled', 'completed', 'no_show', 'rescheduled', 'cancelled');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE call_classification AS ENUM ('hot', 'warm', 'cold', 'not_qualified');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE activity_type AS ENUM ('call', 'email', 'meeting', 'note', 'status_change');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- Profiles table
 CREATE TABLE profiles (
