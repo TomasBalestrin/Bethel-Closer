@@ -12,7 +12,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 1. ENUM TYPES - Add missing types
 -- ============================================================
 
--- Add 'financeiro' role
+-- Create user_role if it doesn't exist, then add 'financeiro'
+DO $$ BEGIN
+  CREATE TYPE user_role AS ENUM ('admin', 'closer', 'lider');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'financeiro';
 
 -- Closer levels (8 levels)
@@ -1782,6 +1786,9 @@ CREATE POLICY "Manage intensivo participations" ON client_intensivo_participatio
 -- PART 6: SEED DATA
 -- ============================================================
 
+-- Temporarily disable RLS on daily_verses for seed data insertion
+ALTER TABLE daily_verses DISABLE ROW LEVEL SECURITY;
+
 -- Insert company values as daily verses (8 values rotating)
 INSERT INTO daily_verses (day_of_year, verse_text, reference) VALUES
   (1, 'Voce veio pra ser mais.', 'Bethel'),
@@ -1817,6 +1824,9 @@ BEGIN
     ON CONFLICT (day_of_year) DO NOTHING;
   END LOOP;
 END $$;
+
+-- Re-enable RLS on daily_verses after seed data insertion
+ALTER TABLE daily_verses ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- COMPLETE! Migration 011 finished.
