@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- Add role column if it doesn't exist (for existing tables)
+DO $$ BEGIN
+    ALTER TABLE profiles ADD COLUMN role user_role DEFAULT 'closer' NOT NULL;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
+
 -- Clients table
 CREATE TABLE IF NOT EXISTS clients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
