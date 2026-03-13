@@ -546,6 +546,19 @@ CREATE TABLE IF NOT EXISTS squads (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- Add missing columns to squads if they don't exist
+DO $$ BEGIN
+    ALTER TABLE squads ADD COLUMN leader_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE squads ADD COLUMN description TEXT;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
+
 -- =============================================
 -- 2. Squad members junction table
 -- =============================================
@@ -557,6 +570,13 @@ CREATE TABLE IF NOT EXISTS squad_members (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     UNIQUE(squad_id, profile_id)
 );
+
+-- Add missing columns to squad_members if they don't exist
+DO $$ BEGIN
+    ALTER TABLE squad_members ADD COLUMN profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
 
 -- =============================================
 -- 3. Indexes
