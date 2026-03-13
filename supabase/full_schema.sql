@@ -2525,6 +2525,9 @@ CREATE POLICY "Manage intensivo participations" ON client_intensivo_participatio
 -- PART 6: SEED DATA
 -- ============================================================
 
+-- Temporarily disable RLS on daily_verses for seed data insertion
+ALTER TABLE daily_verses DISABLE ROW LEVEL SECURITY;
+
 -- Insert company values as daily verses (8 values rotating)
 INSERT INTO daily_verses (day_of_year, verse_text, reference) VALUES
   (1, 'Voce veio pra ser mais.', 'Bethel'),
@@ -2560,6 +2563,9 @@ BEGIN
     ON CONFLICT (day_of_year) DO NOTHING;
   END LOOP;
 END $$;
+
+-- Re-enable RLS on daily_verses after seed data insertion
+ALTER TABLE daily_verses ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- COMPLETE! Migration 011 finished.
