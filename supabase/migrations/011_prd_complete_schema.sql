@@ -1614,6 +1614,23 @@ ALTER TABLE api_rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE calls_backup ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients_backup ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Drop ALL existing policies on daily_verses BEFORE enabling RLS
+-- This prevents errors if old policies reference columns that don't exist (like user_id)
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT policyname FROM pg_policies WHERE tablename = 'daily_verses' AND schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON daily_verses', pol.policyname);
+  END LOOP;
+EXCEPTION WHEN OTHERS THEN
+  -- Ignore errors during policy cleanup
+  NULL;
+END $$;
+
 ALTER TABLE daily_verses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE intensive_editions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE intensive_leads ENABLE ROW LEVEL SECURITY;
