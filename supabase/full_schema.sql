@@ -170,10 +170,15 @@ END;
 $$ language 'plpgsql';
 
 -- Apply updated_at triggers
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_clients_updated_at ON clients;
 CREATE TRIGGER update_clients_updated_at BEFORE UPDATE ON clients FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_calls_updated_at ON calls;
 CREATE TRIGGER update_calls_updated_at BEFORE UPDATE ON calls FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_client_notes_updated_at ON client_notes;
 CREATE TRIGGER update_client_notes_updated_at BEFORE UPDATE ON client_notes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_monthly_goals_updated_at ON monthly_goals;
 CREATE TRIGGER update_monthly_goals_updated_at BEFORE UPDATE ON monthly_goals FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Row Level Security
@@ -363,6 +368,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_drive_sync_config_updated_at ON drive_sync_config;
 CREATE TRIGGER trigger_update_drive_sync_config_updated_at
     BEFORE UPDATE ON drive_sync_config
     FOR EACH ROW
@@ -557,6 +563,7 @@ CREATE INDEX IF NOT EXISTS idx_squad_members_profile_id ON squad_members(profile
 -- 4. Triggers
 -- =============================================
 
+DROP TRIGGER IF EXISTS update_squads_updated_at ON squads;
 CREATE TRIGGER update_squads_updated_at
   BEFORE UPDATE ON squads
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -2144,38 +2151,47 @@ CREATE TRIGGER validate_intensive_lead_temperature
 -- T12. updated_at triggers for new tables
 -- ============================================================
 
+DROP TRIGGER IF EXISTS update_portfolio_students_updated_at ON portfolio_students;
 CREATE TRIGGER update_portfolio_students_updated_at
   BEFORE UPDATE ON portfolio_students
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_crm_automations_updated_at ON crm_automations;
 CREATE TRIGGER update_crm_automations_updated_at
   BEFORE UPDATE ON crm_automations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_crm_column_settings_updated_at ON crm_column_settings;
 CREATE TRIGGER update_crm_column_settings_updated_at
   BEFORE UPDATE ON crm_column_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_imported_files_updated_at ON imported_files;
 CREATE TRIGGER update_imported_files_updated_at
   BEFORE UPDATE ON imported_files
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_indications_updated_at ON indications;
 CREATE TRIGGER update_indications_updated_at
   BEFORE UPDATE ON indications
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_intensive_editions_updated_at ON intensive_editions;
 CREATE TRIGGER update_intensive_editions_updated_at
   BEFORE UPDATE ON intensive_editions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_intensive_leads_updated_at ON intensive_leads;
 CREATE TRIGGER update_intensive_leads_updated_at
   BEFORE UPDATE ON intensive_leads
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_roles_updated_at ON user_roles;
 CREATE TRIGGER update_user_roles_updated_at
   BEFORE UPDATE ON user_roles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_api_rate_limits_updated_at ON api_rate_limits;
 CREATE TRIGGER update_api_rate_limits_updated_at
   BEFORE UPDATE ON api_rate_limits
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
