@@ -45,7 +45,7 @@ EXCEPTION
 END $$;
 
 -- Profiles table
-CREATE TABLE profiles (
+CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE profiles (
 );
 
 -- Clients table
-CREATE TABLE clients (
+CREATE TABLE IF NOT EXISTS clients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -76,7 +76,7 @@ CREATE TABLE clients (
 );
 
 -- Calls table
-CREATE TABLE calls (
+CREATE TABLE IF NOT EXISTS calls (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE NOT NULL,
     closer_id UUID REFERENCES profiles(id) ON DELETE SET NULL NOT NULL,
@@ -94,7 +94,7 @@ CREATE TABLE calls (
 );
 
 -- Client activities table
-CREATE TABLE client_activities (
+CREATE TABLE IF NOT EXISTS client_activities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES profiles(id) ON DELETE SET NULL NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE client_activities (
 );
 
 -- Client notes table
-CREATE TABLE client_notes (
+CREATE TABLE IF NOT EXISTS client_notes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES profiles(id) ON DELETE SET NULL NOT NULL,
@@ -115,7 +115,7 @@ CREATE TABLE client_notes (
 );
 
 -- Tags table
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(50) NOT NULL UNIQUE,
     color VARCHAR(7) DEFAULT '#6366f1' NOT NULL,
@@ -123,7 +123,7 @@ CREATE TABLE tags (
 );
 
 -- Client tags junction table
-CREATE TABLE client_tags (
+CREATE TABLE IF NOT EXISTS client_tags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE NOT NULL,
     tag_id UUID REFERENCES tags(id) ON DELETE CASCADE NOT NULL,
@@ -132,7 +132,7 @@ CREATE TABLE client_tags (
 );
 
 -- Monthly goals table
-CREATE TABLE monthly_goals (
+CREATE TABLE IF NOT EXISTS monthly_goals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     closer_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
     month DATE NOT NULL,
@@ -148,17 +148,17 @@ CREATE TABLE monthly_goals (
 );
 
 -- Create indexes for better performance
-CREATE INDEX idx_clients_closer_id ON clients(closer_id);
-CREATE INDEX idx_clients_status ON clients(status);
-CREATE INDEX idx_clients_created_at ON clients(created_at);
-CREATE INDEX idx_calls_client_id ON calls(client_id);
-CREATE INDEX idx_calls_closer_id ON calls(closer_id);
-CREATE INDEX idx_calls_scheduled_at ON calls(scheduled_at);
-CREATE INDEX idx_calls_status ON calls(status);
-CREATE INDEX idx_client_activities_client_id ON client_activities(client_id);
-CREATE INDEX idx_client_notes_client_id ON client_notes(client_id);
-CREATE INDEX idx_monthly_goals_closer_id ON monthly_goals(closer_id);
-CREATE INDEX idx_monthly_goals_month ON monthly_goals(month);
+CREATE INDEX IF NOT EXISTS idx_clients_closer_id ON clients(closer_id);
+CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status);
+CREATE INDEX IF NOT EXISTS idx_clients_created_at ON clients(created_at);
+CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
+CREATE INDEX IF NOT EXISTS idx_calls_closer_id ON calls(closer_id);
+CREATE INDEX IF NOT EXISTS idx_calls_scheduled_at ON calls(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
+CREATE INDEX IF NOT EXISTS idx_client_activities_client_id ON client_activities(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_notes_client_id ON client_notes(client_id);
+CREATE INDEX IF NOT EXISTS idx_monthly_goals_closer_id ON monthly_goals(closer_id);
+CREATE INDEX IF NOT EXISTS idx_monthly_goals_month ON monthly_goals(month);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -524,7 +524,7 @@ $$;
 -- 1. Squads table
 -- =============================================
 
-CREATE TABLE squads (
+CREATE TABLE IF NOT EXISTS squads (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -537,7 +537,7 @@ CREATE TABLE squads (
 -- 2. Squad members junction table
 -- =============================================
 
-CREATE TABLE squad_members (
+CREATE TABLE IF NOT EXISTS squad_members (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     squad_id UUID REFERENCES squads(id) ON DELETE CASCADE NOT NULL,
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
@@ -549,9 +549,9 @@ CREATE TABLE squad_members (
 -- 3. Indexes
 -- =============================================
 
-CREATE INDEX idx_squads_leader_id ON squads(leader_id);
-CREATE INDEX idx_squad_members_squad_id ON squad_members(squad_id);
-CREATE INDEX idx_squad_members_profile_id ON squad_members(profile_id);
+CREATE INDEX IF NOT EXISTS idx_squads_leader_id ON squads(leader_id);
+CREATE INDEX IF NOT EXISTS idx_squad_members_squad_id ON squad_members(squad_id);
+CREATE INDEX IF NOT EXISTS idx_squad_members_profile_id ON squad_members(profile_id);
 
 -- =============================================
 -- 4. Triggers
