@@ -5,7 +5,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2, Mail, Lock, ArrowRight, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
@@ -140,7 +139,10 @@ export default function AuthPage() {
       </div>
 
       {/* Right Side - Login Form - Always Light */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 !bg-white relative">
+      <div
+        className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 relative"
+        style={{ backgroundColor: '#ffffff' }}
+      >
         {/* Subtle background pattern for light side */}
         <div className="absolute inset-0 opacity-[0.02]" style={{
           backgroundImage: 'radial-gradient(circle at 1px 1px, #030712 1px, transparent 0)',
@@ -156,8 +158,8 @@ export default function AuthPage() {
 
           {/* Welcome text */}
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold !text-gray-900 mb-2">Bem-vindo de volta</h2>
-            <p className="!text-gray-500">
+            <h2 className="text-3xl font-bold mb-2" style={{ color: '#111827' }}>Bem-vindo de volta</h2>
+            <p style={{ color: '#6b7280' }}>
               Entre na sua conta para continuar
             </p>
           </div>
@@ -178,14 +180,19 @@ export default function AuthPage() {
           {/* Login Form */}
           <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium !text-gray-700">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium" style={{ color: '#374151' }}>Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
-                <Input
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5" style={{ color: '#9ca3af' }} />
+                <input
                   id="email"
                   type="email"
                   placeholder="seu@email.com"
-                  className="pl-11 h-12 !bg-white !border-gray-300 !text-gray-900 placeholder:!text-gray-400 focus:!border-blue-500 focus:!ring-blue-500/20 transition-all rounded-xl"
+                  className="w-full pl-11 h-12 transition-all rounded-xl text-sm"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    color: '#111827',
+                  }}
                   {...loginForm.register('email')}
                 />
               </div>
@@ -197,14 +204,19 @@ export default function AuthPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium !text-gray-700">Senha</Label>
+              <Label htmlFor="password" className="text-sm font-medium" style={{ color: '#374151' }}>Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
-                <Input
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5" style={{ color: '#9ca3af' }} />
+                <input
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  className="pl-11 h-12 !bg-white !border-gray-300 !text-gray-900 placeholder:!text-gray-400 focus:!border-blue-500 focus:!ring-blue-500/20 transition-all rounded-xl"
+                  className="w-full pl-11 h-12 transition-all rounded-xl text-sm"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    color: '#111827',
+                  }}
                   {...loginForm.register('password')}
                 />
               </div>
@@ -231,7 +243,7 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          <p className="text-center text-sm !text-gray-500 mt-8">
+          <p className="text-center text-sm mt-8" style={{ color: '#6b7280' }}>
             Não tem uma conta? Fale com seu administrador.
           </p>
         </div>
