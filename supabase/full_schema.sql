@@ -1,6 +1,55 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- =============================================
+-- PRE-FIX: Add missing columns to existing tables
+-- This block ensures all columns exist before creating policies/functions
+-- =============================================
+
+-- profiles: add user_id if missing
+DO $$ BEGIN
+    ALTER TABLE profiles ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- profiles: add role if missing
+DO $$ BEGIN
+    ALTER TABLE profiles ADD COLUMN role user_role DEFAULT 'closer';
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; WHEN undefined_object THEN null; END $$;
+
+-- client_activities: add user_id if missing
+DO $$ BEGIN
+    ALTER TABLE client_activities ADD COLUMN user_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- client_notes: add user_id if missing
+DO $$ BEGIN
+    ALTER TABLE client_notes ADD COLUMN user_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- squads: add leader_id if missing
+DO $$ BEGIN
+    ALTER TABLE squads ADD COLUMN leader_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- squads: add description if missing
+DO $$ BEGIN
+    ALTER TABLE squads ADD COLUMN description TEXT;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- squad_members: add profile_id if missing
+DO $$ BEGIN
+    ALTER TABLE squad_members ADD COLUMN profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- calls: make closer_id nullable if it exists
+DO $$ BEGIN
+    ALTER TABLE calls ALTER COLUMN closer_id DROP NOT NULL;
+EXCEPTION WHEN undefined_column THEN null; WHEN undefined_table THEN null; END $$;
+
+-- =============================================
+-- END PRE-FIX
+-- =============================================
+
 -- Create enum types (with IF NOT EXISTS check)
 DO $$ BEGIN
     CREATE TYPE user_role AS ENUM ('admin', 'closer', 'lider');
