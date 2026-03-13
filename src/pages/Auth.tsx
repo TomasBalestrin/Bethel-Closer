@@ -139,8 +139,23 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right Side - Login Form - Always Light */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 bg-white relative">
+      {/* Right Side - Login Form - Always Light (force light theme via CSS vars) */}
+      <div
+        className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 bg-white relative"
+        style={{
+          // Force light theme CSS variables for this section
+          '--background': '0 0% 100%',
+          '--foreground': '224 76% 4%',
+          '--card': '0 0% 100%',
+          '--card-foreground': '224 76% 4%',
+          '--input': '220 14% 96%',
+          '--border': '220 13% 91%',
+          '--ring': '240 98% 60%',
+          '--muted': '220 14% 96%',
+          '--muted-foreground': '220 9% 46%',
+          colorScheme: 'light'
+        } as React.CSSProperties}
+      >
         {/* Subtle background pattern for light side */}
         <div className="absolute inset-0 opacity-[0.02]" style={{
           backgroundImage: 'radial-gradient(circle at 1px 1px, #030712 1px, transparent 0)',
