@@ -1,7 +1,7 @@
 // Bethel Closer Service Worker - Offline Support
-const CACHE_NAME = 'bethel-closer-v5';
-const STATIC_CACHE = 'bethel-static-v5';
-const DATA_CACHE = 'bethel-data-v5';
+const CACHE_NAME = 'bethel-closer-v6';
+const STATIC_CACHE = 'bethel-static-v6';
+const DATA_CACHE = 'bethel-data-v6';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [

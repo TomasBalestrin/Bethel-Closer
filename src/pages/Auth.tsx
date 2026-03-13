@@ -139,23 +139,8 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right Side - Login Form - Always Light (force light theme via CSS vars) */}
-      <div
-        className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 bg-white relative"
-        style={{
-          // Force light theme CSS variables for this section
-          '--background': '0 0% 100%',
-          '--foreground': '224 76% 4%',
-          '--card': '0 0% 100%',
-          '--card-foreground': '224 76% 4%',
-          '--input': '220 14% 96%',
-          '--border': '220 13% 91%',
-          '--ring': '240 98% 60%',
-          '--muted': '220 14% 96%',
-          '--muted-foreground': '220 9% 46%',
-          colorScheme: 'light'
-        } as React.CSSProperties}
-      >
+      {/* Right Side - Login Form - Always Light */}
+      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-8 !bg-white relative">
         {/* Subtle background pattern for light side */}
         <div className="absolute inset-0 opacity-[0.02]" style={{
           backgroundImage: 'radial-gradient(circle at 1px 1px, #030712 1px, transparent 0)',
@@ -171,8 +156,8 @@ export default function AuthPage() {
 
           {/* Welcome text */}
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Bem-vindo de volta</h2>
-            <p className="text-gray-500">
+            <h2 className="text-3xl font-bold !text-gray-900 mb-2">Bem-vindo de volta</h2>
+            <p className="!text-gray-500">
               Entre na sua conta para continuar
             </p>
           </div>
@@ -193,14 +178,14 @@ export default function AuthPage() {
           {/* Login Form */}
           <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium !text-gray-700">Email</Label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
                 <Input
                   id="email"
                   type="email"
                   placeholder="seu@email.com"
-                  className="pl-11 h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500/20 transition-all rounded-xl"
+                  className="pl-11 h-12 !bg-white !border-gray-300 !text-gray-900 placeholder:!text-gray-400 focus:!border-blue-500 focus:!ring-blue-500/20 transition-all rounded-xl"
                   {...loginForm.register('email')}
                 />
               </div>
@@ -212,14 +197,14 @@ export default function AuthPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-gray-700">Senha</Label>
+              <Label htmlFor="password" className="text-sm font-medium !text-gray-700">Senha</Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400" />
                 <Input
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  className="pl-11 h-12 bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500/20 transition-all rounded-xl"
+                  className="pl-11 h-12 !bg-white !border-gray-300 !text-gray-900 placeholder:!text-gray-400 focus:!border-blue-500 focus:!ring-blue-500/20 transition-all rounded-xl"
                   {...loginForm.register('password')}
                 />
               </div>
@@ -246,7 +231,7 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-8">
+          <p className="text-center text-sm !text-gray-500 mt-8">
             Não tem uma conta? Fale com seu administrador.
           </p>
         </div>
