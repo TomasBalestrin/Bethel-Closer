@@ -215,11 +215,14 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signOut: async () => {
-        const { error } = await supabase.auth.signOut()
+        const { error } = await supabase.auth.signOut({ scope: 'local' })
 
         if (error) {
           throw new Error(error.message)
         }
+
+        // Clear persisted state from localStorage to prevent race conditions
+        localStorage.removeItem('auth-storage')
 
         set({
           user: null,
