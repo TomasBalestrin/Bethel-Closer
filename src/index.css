@@ -17,7 +17,7 @@
     --secondary: 224 30% 95%;
     --secondary-foreground: 224 76% 4%;
     --muted: 224 20% 94%;
-    --muted-foreground: 224 10% 40%;
+    --muted-foreground: 224 20% 40%;
     --accent: 240 98% 16%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
@@ -59,29 +59,29 @@
   .dark {
     --background: 224 76% 4%;
     --foreground: 0 0% 98%;
-    --card: 224 50% 8%;
+    --card: 224 76% 6%;
     --card-foreground: 0 0% 98%;
-    --popover: 224 50% 8%;
+    --popover: 224 76% 6%;
     --popover-foreground: 0 0% 98%;
-    --primary: 240 98% 60%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 224 30% 12%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 224 76% 4%;
+    --secondary: 224 50% 12%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 224 20% 15%;
-    --muted-foreground: 224 10% 60%;
-    --accent: 240 98% 50%;
+    --muted: 224 50% 12%;
+    --muted-foreground: 224 20% 60%;
+    --accent: 240 98% 25%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 62% 50%;
+    --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 100%;
     --success: 160 70% 45%;
     --success-foreground: 0 0% 100%;
     --warning: 48 96% 53%;
-    --warning-foreground: 0 0% 0%;
+    --warning-foreground: 0 0% 100%;
     --info: 217 91% 65%;
     --info-foreground: 0 0% 100%;
-    --border: 224 30% 18%;
-    --input: 224 30% 18%;
-    --ring: 240 98% 50%;
+    --border: 224 50% 15%;
+    --input: 224 50% 15%;
+    --ring: 240 98% 25%;
 
     /* Sidebar variables dark */
     --sidebar: 224 76% 3%;
@@ -96,7 +96,7 @@
     /* Gradients dark */
     --gradient-primary: linear-gradient(135deg, hsl(224 76% 8%) 0%, hsl(240 98% 20%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(240 98% 20%) 0%, hsl(224 76% 8%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(224 50% 8%) 0%, hsl(224 50% 6%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(224 76% 6%) 0%, hsl(224 76% 4%) 100%);
 
     /* Shadows dark */
     --shadow-card: 0 4px 20px -2px rgb(0 0 0 / 0.3);
@@ -179,15 +179,19 @@
   }
 
   .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
+    animation: slideUp 0.4s ease-out;
   }
 
   .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
+    animation: scaleIn 0.3s ease-out;
   }
 
   .animate-slide-in-right {
     animation: slideInRight 0.3s ease-out;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
   }
 
   @keyframes fadeIn {
@@ -232,6 +236,15 @@
     }
   }
 
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+
   /* Glass effect */
   .glass {
     @apply backdrop-blur-md bg-white/80 dark:bg-black/50;
@@ -243,6 +256,11 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+
+  /* Font display for headings */
+  .font-display {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   }
 }
 
@@ -275,4 +293,59 @@
 ::selection {
   background: hsl(var(--primary) / 0.2);
   color: hsl(var(--primary));
+}
+
+/* Button micro-interactions */
+button,
+a {
+  transition: background-color 150ms, transform 100ms, opacity 100ms;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Skip link for accessibility */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.3s;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Touch targets for mobile */
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Prevent zoom on iOS when focusing inputs */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
